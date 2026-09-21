@@ -5,7 +5,7 @@ import { useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import heroBanner from "@/assets/hero-banner.png";
-import heroDevices from "@/assets/hero-devices.png.asset.json";
+import heroDevices from "@/assets/hero-devices.jpg";
 import heroBurger from "@/assets/hero-burger.png";
 
 const HeroSection = () => {
@@ -146,7 +146,7 @@ const HeroSection = () => {
               />
 
               <img
-                src={heroDevices.url}
+                src={heroDevices}
                 alt="NOOV painel do lojista no notebook e cardápio digital no celular"
                 className="relative z-10 w-full h-auto object-contain drop-shadow-2xl scale-110 xl:scale-115 origin-center"
               />
