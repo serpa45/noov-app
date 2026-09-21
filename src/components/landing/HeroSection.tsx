@@ -5,7 +5,7 @@ import { useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import heroBanner from "@/assets/hero-banner.png";
-import heroDevices from "@/assets/hero-devices.jpg";
+import heroDevices from "@/assets/hero-devices.png";
 import heroBurger from "@/assets/hero-burger.png";
 
 const HeroSection = () => {
