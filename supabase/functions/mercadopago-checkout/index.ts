@@ -86,7 +86,16 @@ Deno.serve(async (req) => {
       .eq("user_id", userId)
       .single();
 
-    const accessToken = Deno.env.get("MERCADOPAGO_ACCESS_TOKEN");
+    let accessToken = Deno.env.get("MERCADOPAGO_ACCESS_TOKEN");
+    if (!accessToken) {
+      const { data: config } = await supabase
+        .from("configuracoes_globais")
+        .select("valor")
+        .eq("chave", "mercadopago_access_token")
+        .maybeSingle();
+      accessToken = config?.valor;
+    }
+
     if (!accessToken) {
       return new Response(JSON.stringify({ error: "Token Mercado Pago não configurado" }), {
         status: 500,

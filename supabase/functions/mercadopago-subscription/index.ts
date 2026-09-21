@@ -35,7 +35,15 @@ Deno.serve(async (req) => {
     }
     const userId = user.id;
 
-    const accessToken = Deno.env.get("MERCADOPAGO_ACCESS_TOKEN");
+    let accessToken = Deno.env.get("MERCADOPAGO_ACCESS_TOKEN");
+    if (!accessToken) {
+      const { data: config } = await supabase
+        .from("configuracoes_globais")
+        .select("valor")
+        .eq("chave", "mercadopago_access_token")
+        .maybeSingle();
+      accessToken = config?.valor;
+    }
 
     // Get store
     const { data: loja } = await supabase
