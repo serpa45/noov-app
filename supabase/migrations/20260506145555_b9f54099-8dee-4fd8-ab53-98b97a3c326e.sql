@@ -1,0 +1,1 @@
+ALTER TYPE public.app_cupom_tipo ADD VALUE 'cliente_novo';

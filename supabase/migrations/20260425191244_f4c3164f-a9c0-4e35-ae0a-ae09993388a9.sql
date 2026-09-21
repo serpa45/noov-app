@@ -1,0 +1,2 @@
+ALTER TABLE public.lojas ADD COLUMN valor_plano_exclusivo NUMERIC;
+COMMENT ON COLUMN public.lojas.valor_plano_exclusivo IS 'Valor exclusivo do plano para esta loja, que sobrescreve o valor padrão do plano.';

@@ -1,0 +1,1 @@
+ALTER TABLE public.lojas ADD COLUMN IF NOT EXISTS plano_id_exclusivo UUID REFERENCES public.planos(id);

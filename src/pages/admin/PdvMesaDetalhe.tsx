@@ -1,0 +1,1148 @@
+import { useState, useMemo, useEffect, useRef } from "react";
+import { useKeepScreenOn } from "@/hooks/useKeepScreenOn";
+import PdvAddonModal from "@/components/pdv/PdvAddonModal";
+import ThermalReceipt from "@/components/admin/ThermalReceipt";
+import { useParams, useNavigate } from "react-router-dom";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { supabase } from "@/integrations/supabase/client";
+import { useAuth } from "@/contexts/AuthContext";
+import { usePdvUser } from "@/contexts/PdvUserContext";
+import { useRealtimeSubscription } from "@/hooks/useRealtimeSubscription";
+import { motion } from "framer-motion";
+import { Card, CardContent } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Badge } from "@/components/ui/badge";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+} from "@/components/ui/dialog";
+import {
+  Search,
+  Plus,
+  Minus,
+  ShoppingCart,
+  CreditCard,
+  Banknote,
+  Smartphone,
+  ArrowLeft,
+  ArrowRightLeft,
+  CheckCircle2,
+  Loader2,
+  X,
+  Printer,
+  QrCode,
+  Copy,
+  Check,
+  PackagePlus,
+} from "lucide-react";
+import { toast } from "@/hooks/use-toast";
+import ReceiptCart from "@/components/pdv/ReceiptCart";
+import NumericKeypad from "@/components/pdv/NumericKeypad";
+import { printReceipt, printKitchenTicket } from "@/utils/printHelper";
+import { isStoreOpen } from "@/utils/storeHours";
+
+import { TableQrModal } from "@/components/pdv/TableQrModal";
+
+// PrintService removed
+// ReceiptData removed as we use window.print() now
+
+type CartItem = { 
+  uid: string; 
+  id: string; 
+  name: string; 
+  price: number; 
+  qty: number; 
+  image?: string; 
+  addons?: { nome: string; preco: number }[]; 
+  sabores?: string[];
+  observation?: string;
+  weight?: string;
+  unidade_medida?: string;
+  weightMode?: "weight" | "value";
+  order_type?: string;
+};
+
+
+export default function PdvMesaDetalhe() {
+  const { mesaId } = useParams();
+  const navigate = useNavigate();
+  const { user } = useAuth();
+  useKeepScreenOn();
+  const { pdvUser } = usePdvUser();
+  const queryClient = useQueryClient();
+  const receiptRef = useRef<HTMLDivElement>(null);
+  const [search, setSearch] = useState("");
+  const [activeCategory, setActiveCategory] = useState<string | null>(null);
+  const [paymentValue, setPaymentValue] = useState("");
+  const [paymentMethod, setPaymentMethod] = useState("dinheiro");
+  const [showTransferModal, setShowTransferModal] = useState(false);
+  const [showPaymentModal, setShowPaymentModal] = useState(false);
+  const [isPartialPayment, setIsPartialPayment] = useState(false);
+  const [includeServiceCharge, setIncludeServiceCharge] = useState(true);
+  const [pixData, setPixData] = useState<{
+    qr_code: string;
+    qr_code_base64: string;
+    payment_id: string;
+    amount: number;
+    comissao_plataforma: number;
+    valor_lojista: number;
+  } | null>(null);
+  const thermalReceiptRef = useRef<HTMLDivElement>(null);
+  const [pixPolling, setPixPolling] = useState(false);
+  const [pixCopied, setPixCopied] = useState(false);
+  const [loadingPix, setLoadingPix] = useState(false);
+  const [addonProduct, setAddonProduct] = useState<any>(null);
+  const [showAddonModal, setShowAddonModal] = useState(false);
+  const [showQrModal, setShowQrModal] = useState(false);
+  const [closedModal, setClosedModal] = useState<{ open: boolean; message: string }>({ open: false, message: "" });
+
+
+
+  // Get loja
+  const { data: loja } = useQuery({
+    queryKey: ["loja-pdv", user?.id, pdvUser?.loja_id],
+    queryFn: async () => {
+      if (pdvUser?.loja_id) {
+        const { data } = await supabase.from("lojas").select("id, slug, nome, logo_url, cor_primaria, impressao_automatica, segmento, horario_funcionamento, pdv_venda_fora_horario").eq("id", pdvUser.loja_id).maybeSingle();
+        return data;
+      }
+      const { data } = await supabase.from("lojas").select("id, slug, nome, logo_url, cor_primaria, impressao_automatica, segmento, horario_funcionamento, pdv_venda_fora_horario").eq("user_id", user!.id).maybeSingle();
+
+      return data;
+    },
+    enabled: !!user || !!pdvUser,
+  });
+
+  // Get mesa
+  const { data: mesa } = useQuery({
+    queryKey: ["pdv-mesa", mesaId],
+    queryFn: async () => {
+      const { data } = await supabase.from("pdv_mesas").select("*").eq("id", mesaId!).single();
+      return data;
+    },
+    enabled: !!mesaId,
+  });
+
+  // Get pedido
+  const { data: pedido, refetch: refetchPedido } = useQuery({
+    queryKey: ["pdv-pedido", mesa?.pedido_atual_id],
+    queryFn: async () => {
+      const { data } = await supabase.from("pdv_pedidos").select("*").eq("id", mesa!.pedido_atual_id).single();
+      return data;
+    },
+    enabled: !!mesa?.pedido_atual_id,
+  });
+
+  // Use numero_diario from the pedido (auto-generated by trigger)
+  const orderSequence = (pedido as any)?.numero_diario || 0;
+
+  // Get products
+  const { data: produtos = [] } = useQuery({
+    queryKey: ["pdv-produtos", loja?.id],
+    queryFn: async () => {
+      const { data } = await supabase
+        .from("produtos")
+        .select("*")
+        .eq("loja_id", loja!.id)
+        .eq("disponivel", true)
+        .order("categoria")
+        .order("nome"); // Adicionado ordem alfabética dentro da categoria
+      return data || [];
+    },
+    enabled: !!loja,
+  });
+
+  // Get payments for this order
+  const { data: pagamentos = [], refetch: refetchPagamentos } = useQuery({
+    queryKey: ["pdv-pagamentos", pedido?.id],
+    queryFn: async () => {
+      const { data } = await supabase
+        .from("pdv_pagamentos")
+        .select("valor, metodo")
+        .eq("pedido_id", pedido!.id)
+        .order("created_at");
+      return data || [];
+    },
+    enabled: !!pedido?.id,
+  });
+
+  // Get available tables for transfer
+  const { data: mesasLivres = [] } = useQuery({
+    queryKey: ["pdv-mesas-livres", loja?.id],
+    queryFn: async () => {
+      const { data } = await supabase
+        .from("pdv_mesas")
+        .select("*")
+        .eq("loja_id", loja!.id)
+        .eq("status", "livre")
+        .order("nome");
+      return data || [];
+    },
+    enabled: !!loja && showTransferModal,
+  });
+
+  useRealtimeSubscription("pdv_pedidos", [["pdv-pedido"], ["pdv-mesas"]], mesa?.pedido_atual_id ? `id=eq.${mesa.pedido_atual_id}` : undefined);
+  useRealtimeSubscription("pedidos", [["pdv-pedido-sync"]], undefined);
+
+
+  // Sync kitchen status from pedidos table back to pdv_pedidos
+  const { data: linkedPedido } = useQuery({
+    queryKey: ["pdv-linked-pedido", pedido?.id, mesa?.nome],
+    queryFn: async () => {
+      const { data } = await supabase
+        .from("pedidos")
+        .select("id, status")
+        .eq("lojista_id", user!.id)
+        .eq("tipo", "mesa")
+        .ilike("cliente_nome", `%${mesa!.nome}%`)
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      return data;
+    },
+    enabled: !!pedido?.id && !!user && !!mesa?.nome && pedido?.status_cozinha === "em_preparo",
+    refetchInterval: 5000,
+  });
+
+  // Auto-sync: when linked pedido is "pronto" or "entregue", update pdv_pedidos
+  const syncedRef = useRef(false);
+  useEffect(() => {
+    if (
+      linkedPedido &&
+      ["pronto", "entregue", "finalizado"].includes(linkedPedido.status) &&
+      pedido?.status_cozinha === "em_preparo" &&
+      !syncedRef.current
+    ) {
+      syncedRef.current = true;
+      supabase.from("pdv_pedidos").update({ status_cozinha: "pronto" }).eq("id", pedido.id).then(() => {
+        refetchPedido();
+        toast({ title: "Pedido pronto! ✅" });
+      });
+    }
+    if (!linkedPedido || pedido?.status_cozinha !== "em_preparo") {
+      syncedRef.current = false;
+    }
+  }, [linkedPedido, pedido?.status_cozinha, pedido?.id, refetchPedido]);
+
+  const categories = useMemo(() => {
+    const cats = [...new Set(produtos.map((p: any) => p.categoria || "Sem categoria"))];
+    return cats;
+  }, [produtos]);
+
+  const filtered = useMemo(() => {
+    let list = produtos;
+    if (activeCategory) list = list.filter((p: any) => (p.categoria || "Sem categoria") === activeCategory);
+    if (search) list = list.filter((p: any) => p.nome.toLowerCase().includes(search.toLowerCase()));
+    return list;
+  }, [produtos, activeCategory, search]);
+
+  const cart: CartItem[] = useMemo(() => {
+    if (!pedido?.items) return [];
+    const items = pedido.items as any[];
+    return items.map((i: any) => ({
+      uid: i.uid || i.id,
+      id: i.id,
+      name: i.name || i.nome,
+      price: i.price || i.preco,
+      qty: i.quantity || i.qty || 1,
+      image: i.image || i.imagem_url || null,
+      addons: i.addons || [],
+      sabores: i.sabores || [],
+      observation: i.observation || "",
+      weight: i.weight,
+      unidade_medida: i.unidade_medida,
+      weightMode: i.weightMode,
+      order_type: i.order_type,
+      is_new: i.is_new,
+    }));
+  }, [pedido]);
+
+  const totalProdutos = cart.reduce((acc, c) => {
+    const addonsTotal = c.addons?.reduce((sum, a) => sum + Number(a.preco), 0) || 0;
+    return acc + (c.price + addonsTotal) * c.qty;
+  }, 0);
+  const taxaServico = includeServiceCharge ? totalProdutos * 0.1 : 0;
+  const total = totalProdutos + taxaServico;
+  const valorPago = pedido?.valor_pago || 0;
+  const restante = Math.max(0, total - valorPago);
+
+  // Update order items
+  const updateItems = useMutation({
+    mutationFn: async (newItems: CartItem[]) => {
+      const itemsJson = newItems.map((i) => ({ 
+        uid: i.uid, 
+        id: i.id, 
+        name: i.name, 
+        price: i.price, 
+        quantity: i.qty, 
+        image: i.image, 
+        addons: i.addons || [],
+        sabores: i.sabores || [],
+        observation: i.observation || "",
+        weight: i.weight,
+        unidade_medida: i.unidade_medida,
+        weightMode: i.weightMode,
+        order_type: i.order_type,
+        is_new: (i as any).is_new
+      }));
+      const newTotal = newItems.reduce((acc, c) => {
+        const addonsTotal = c.addons?.reduce((sum, a) => sum + Number(a.preco), 0) || 0;
+        return acc + (c.price + addonsTotal) * c.qty;
+      }, 0);
+      const { error } = await supabase
+        .from("pdv_pedidos")
+        .update({ 
+          items: itemsJson as any, 
+          total: newTotal,
+          garcom_nome: pdvUser?.nome || (pdvUser as any)?.name || null
+        } as any)
+        .eq("id", pedido!.id);
+      if (error) throw error;
+    },
+    onSuccess: () => refetchPedido(),
+  });
+
+  const handleProductClick = (product: any) => {
+    const addons = Array.isArray(product.adicionais) ? product.adicionais : [];
+    const hasSizes = (loja as any)?.segmento === "pizzaria" && Array.isArray(product.tamanhos) && product.tamanhos.length > 0;
+    const isWeightBased = product.unidade_medida === "kg";
+    const isSpecialCategory = (product.categoria || "").toLowerCase() === "caldos";
+
+    if (addons.length > 0 || hasSizes || isWeightBased || isSpecialCategory) {
+      setAddonProduct(product);
+      setShowAddonModal(true);
+    } else {
+      addToCartDirect(product);
+    }
+  };
+
+  const addToCartDirect = (product: any) => {
+    const existing = cart.find((c) => c.id === product.id && (!c.addons || c.addons.length === 0));
+    let newCart: CartItem[];
+    const isNew = pedido?.status_cozinha && pedido.status_cozinha !== "pendente" && pedido.status_cozinha !== "pendente";
+
+    if (existing) {
+      newCart = cart.map((c) => c.uid === existing.uid ? { ...c, qty: c.qty + 1, is_new: isNew || (c as any).is_new } : c);
+    } else {
+      newCart = [...cart, { 
+        uid: crypto.randomUUID(), 
+        id: product.id, 
+        name: product.nome, 
+        price: product.preco, 
+        qty: 1, 
+        image: product.imagem_url || null,
+        order_type: "local", // Identifying items added by the merchant locally
+        is_new: !!isNew
+      } as any];
+    }
+    updateItems.mutate(newCart);
+  };
+
+  const handleAddonConfirm = (data: any) => {
+    const isNew = pedido?.status_cozinha && pedido.status_cozinha !== "pendente" && pedido.status_cozinha !== "pendente";
+    const newCart = [...cart, {
+      uid: crypto.randomUUID(),
+      id: data.productId,
+      name: data.name,
+      price: data.basePrice,
+      qty: data.qty,
+      image: data.image,
+      addons: data.addons,
+      sabores: data.sabores,
+      observation: data.observation,
+      weight: data.weight,
+      unidade_medida: data.unidade_medida,
+      weightMode: data.weightMode,
+      order_type: "local", // Identifying items added by the merchant locally
+      is_new: !!isNew
+    } as any];
+    updateItems.mutate(newCart);
+  };
+
+  const updateQty = (uid: string, delta: number) => {
+    const newCart = cart
+      .map((c) => c.uid === uid ? { ...c, qty: Math.max(0, c.qty + delta) } : c)
+      .filter((c) => c.qty > 0);
+    updateItems.mutate(newCart);
+  };
+
+  const removeItem = (uid: string) => {
+    updateItems.mutate(cart.filter((c) => c.uid !== uid));
+  };
+
+  // Register payment
+  const registerPayment = useMutation({
+    mutationFn: async () => {
+      const val = parseFloat(paymentValue.replace(",", "."));
+      if (isNaN(val) || val <= 0) throw new Error("Valor inválido");
+
+      await supabase.from("pdv_pagamentos").insert({
+        pedido_id: pedido!.id,
+        valor: val,
+        metodo: paymentMethod,
+      });
+
+      const newPaid = valorPago + val;
+      const newStatus = newPaid >= total ? "pago" : "parcial";
+
+      await supabase.from("pdv_pedidos").update({
+        valor_pago: newPaid,
+        pagamento_status: newStatus,
+        metodo_pagamento: paymentMethod,
+      }).eq("id", pedido!.id);
+    },
+    onSuccess: () => {
+      refetchPedido();
+      refetchPagamentos();
+      setPaymentValue("");
+      setShowPaymentModal(false);
+      toast({ title: "Pagamento registrado!" });
+    },
+    onError: (e: any) => toast({ title: e.message || "Erro ao registrar pagamento", variant: "destructive" }),
+  });
+
+  // Send to kitchen
+  const sendToKitchen = useMutation({
+    mutationFn: async () => {
+      if (!(loja as any)?.pdv_venda_fora_horario) {
+        const openCheck = isStoreOpen((loja as any)?.horario_funcionamento);
+        if (!openCheck.open) {
+          setClosedModal({ open: true, message: openCheck.message });
+          throw new Error("__STORE_CLOSED__");
+        }
+      }
+      // Clear new items flag locally when sending to kitchen
+      const newItems = cart.map(i => ({ ...i, is_new: false }));
+
+      const itemsJson = newItems.map((i) => ({
+        uid: i.uid, id: i.id, name: i.name, price: i.price,
+        quantity: i.qty, image: i.image, addons: i.addons || [],
+        observation: i.observation || "",
+        weight: i.weight,
+        unidade_medida: i.unidade_medida,
+        weightMode: i.weightMode,
+        order_type: i.order_type || "local"
+      }));
+
+      await supabase.from("pdv_pedidos").update({ 
+        status_cozinha: "em_preparo",
+        items: itemsJson as any
+      }).eq("id", pedido!.id);
+
+      // Check if any item came from QR Code or if the order itself is QR Code
+      const hasQrItem = cart.some(i => i.order_type === "mesa_cliente") || pedido?.order_type === "mesa_cliente";
+
+      // Insert into pedidos for kitchen/preparation tracking
+      const { data: existingKitchenPedido } = await supabase
+        .from("pedidos")
+        .select("id")
+        .eq("lojista_id", user!.id)
+        .eq("tipo", "mesa")
+        .eq("pdv_pedido_id", pedido!.id)
+        .not("status", "in", '("entregue", "finalizado", "cancelado")')
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      if (existingKitchenPedido) {
+        await supabase.from("pedidos").update({
+          items: itemsJson as any,
+          total,
+          status: "preparando",
+          order_type: hasQrItem ? "mesa_cliente" : "local"
+        }).eq("id", existingKitchenPedido.id);
+      } else {
+        await supabase.from("pedidos").insert({
+          lojista_id: user!.id,
+          items: itemsJson as any,
+          total,
+          status: "preparando",
+          tipo: "mesa",
+          cliente_nome: `Mesa ${String(mesa.nome).replace(/mesa/gi,"").trim()}`,
+          observacoes: `Pedido enviado para preparo`,
+          order_type: hasQrItem ? "mesa_cliente" : "local",
+          pdv_pedido_id: pedido!.id
+        } as any);
+      }
+    },
+    onSuccess: () => {
+      refetchPedido();
+      toast({ title: "Pedido enviado para preparo! 🍳" });
+    },
+  });
+
+  // Mark as ready
+  const markReady = useMutation({
+    mutationFn: async () => {
+      await supabase.from("pdv_pedidos").update({ status_cozinha: "pronto" }).eq("id", pedido!.id);
+    },
+    onSuccess: () => {
+      refetchPedido();
+      toast({ title: "Pedido pronto! ✅" });
+    },
+  });
+
+  // Close order
+  const closeOrder = useMutation({
+    mutationFn: async () => {
+      if (restante > 0) throw new Error("Pagamento incompleto");
+      await supabase.from("pdv_pedidos").update({ status: "finalizado", pagamento_status: "pago", status_cozinha: "pronto" }).eq("id", pedido!.id);
+      await supabase.from("pdv_mesas").update({ status: "livre", pedido_atual_id: null }).eq("id", mesaId!);
+
+      // Update existing pedido to "entregue" (finalizado) or insert if not sent to kitchen yet
+      const itemsJson = cart.map((i) => ({
+        uid: i.uid, id: i.id, name: i.name, price: i.price,
+        quantity: i.qty, image: i.image, addons: i.addons || [],
+        observation: i.observation || "",
+        weight: i.weight,
+        unidade_medida: i.unidade_medida,
+        weightMode: i.weightMode,
+      }));
+
+      // Try to update existing pedido created when sent to kitchen
+      const { data: existingPedido } = await supabase
+        .from("pedidos")
+        .select("id")
+        .eq("lojista_id", user!.id)
+        .eq("tipo", "mesa")
+        .eq("pdv_pedido_id", pedido!.id)
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      if (existingPedido) {
+        await supabase.from("pedidos").update({
+          items: itemsJson as any,
+          total,
+          status: "entregue",
+          observacoes: `Pagamento: ${pedido?.metodo_pagamento || "misto"}`,
+        }).eq("id", existingPedido.id);
+      } else {
+        await supabase.from("pedidos").insert({
+          lojista_id: user!.id,
+          items: itemsJson as any,
+          total,
+          status: "entregue",
+          tipo: "mesa",
+          cliente_nome: `Mesa ${String(mesa.nome).replace(/mesa/gi,"").trim()}`,
+          pdv_pedido_id: pedido!.id
+        } as any);
+      }
+    },
+    onSuccess: () => {
+      toast({ title: "Pedido finalizado!" });
+      navigate("/lojista/pdv-mesas");
+    },
+    onError: (e: any) => toast({ title: e.message, variant: "destructive" }),
+  });
+
+  // Cancel order
+  const cancelOrder = useMutation({
+    mutationFn: async () => {
+      // Cancel pdv_pedido
+      await supabase.from("pdv_pedidos").update({ status: "cancelado", status_cozinha: "pendente" }).eq("id", pedido!.id);
+      // Free the table
+      await supabase.from("pdv_mesas").update({ status: "livre", pedido_atual_id: null }).eq("id", mesaId!);
+      // Delete related pdv_pagamentos
+      await supabase.from("pdv_pagamentos").delete().eq("pedido_id", pedido!.id);
+      // Cancel related pedido in pedidos table
+      const { data: existingPedido } = await supabase
+        .from("pedidos")
+        .select("id")
+        .eq("lojista_id", user!.id)
+        .eq("tipo", "mesa")
+        .eq("cliente_nome", `Mesa ${String(mesa.nome).replace(/mesa/gi,"").trim()}`)
+        .in("status", ["preparando", "em_preparo"])
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      if (existingPedido) {
+        await supabase.from("pedidos").update({ status: "cancelado" }).eq("id", existingPedido.id);
+      }
+    },
+    onSuccess: () => {
+      toast({ title: "Pedido cancelado!" });
+      navigate("/lojista/pdv-mesas");
+    },
+    onError: () => toast({ title: "Erro ao cancelar pedido", variant: "destructive" }),
+  });
+
+  const transferTable = useMutation({
+    mutationFn: async (newMesaId: string) => {
+      await supabase.from("pdv_pedidos").update({ mesa_id: newMesaId }).eq("id", pedido!.id);
+      await supabase.from("pdv_mesas").update({ status: "livre", pedido_atual_id: null }).eq("id", mesaId!);
+      await supabase.from("pdv_mesas").update({ status: "ocupada", pedido_atual_id: pedido!.id }).eq("id", newMesaId);
+    },
+    onSuccess: () => {
+      toast({ title: "Pedido transferido!" });
+      navigate("/lojista/pdv-mesas");
+    },
+  });
+
+  const handlePixPayment = async () => {
+    const val = parseFloat(paymentValue.replace(",", "."));
+    if (isNaN(val) || val <= 0) {
+      toast({ title: "Informe um valor válido", variant: "destructive" });
+      return;
+    }
+    setLoadingPix(true);
+    try {
+      const res = await supabase.functions.invoke("pdv-pix-payment", {
+        body: { action: "create", amount: val, pedido_id: pedido?.id },
+      });
+      if (res.error || !res.data?.qr_code) {
+        toast({ title: res.data?.error || "Erro ao gerar PIX", variant: "destructive" });
+        return;
+      }
+      setPixData(res.data);
+      setShowPaymentModal(false);
+      // Start polling
+      setPixPolling(true);
+      pollPixPayment(res.data.payment_id, val);
+    } catch {
+      toast({ title: "Erro ao gerar PIX", variant: "destructive" });
+    } finally {
+      setLoadingPix(false);
+    }
+  };
+
+  const pollPixPayment = (paymentId: string, val: number) => {
+    let attempts = 0;
+    const interval = setInterval(async () => {
+      attempts++;
+      if (attempts >= 120) {
+        clearInterval(interval);
+        setPixPolling(false);
+        return;
+      }
+      try {
+        const res = await supabase.functions.invoke("pdv-pix-payment", {
+          body: { action: "status", payment_id: paymentId },
+        });
+        if (res.data?.status === "approved") {
+          clearInterval(interval);
+          setPixPolling(false);
+          setPixData(null);
+          // Register the payment in the order
+          const newPaid = (pedido?.valor_pago || 0) + val;
+          const newTotal = cart.reduce((acc, c) => acc + c.price * c.qty, 0);
+          const newStatus = newPaid >= newTotal ? "pago" : "parcial";
+          await supabase.from("pdv_pagamentos").insert({
+            pedido_id: pedido!.id,
+            valor: val,
+            metodo: "pix",
+          });
+          await supabase.from("pdv_pedidos").update({
+            valor_pago: newPaid,
+            pagamento_status: newStatus,
+            metodo_pagamento: "pix",
+          }).eq("id", pedido!.id);
+          refetchPedido();
+          toast({ title: "✅ Pagamento PIX confirmado!" });
+        }
+      } catch { /* continue */ }
+    }, 3000);
+  };
+
+  const handleCopyPix = () => {
+    if (pixData?.qr_code) {
+      navigator.clipboard.writeText(pixData.qr_code);
+      setPixCopied(true);
+      toast({ title: "Código PIX copiado!" });
+      setTimeout(() => setPixCopied(false), 3000);
+    }
+  };
+
+  const printPdvOrder = async () => {
+    try {
+      await printKitchenTicket({
+        orderNumber: String(orderSequence).padStart(3, "0"),
+        date: new Date(pedido.created_at).toLocaleTimeString("pt-BR"),
+        mesaNome: mesa?.nome,
+        garcomNome: pedido.observacoes?.match(/Garçom:\s*([^\n\r|]+)/)?.[1]?.trim(),
+        items: cart.map((c: any) => ({
+          name: c.name,
+          qty: c.qty,
+          obs: c.observation,
+          extras: c.addons,
+          sabores: c.sabores,
+        })),
+      });
+    } catch (error) {
+      console.error("Erro ao imprimir cozinha:", error);
+      toast({ title: "Erro ao imprimir", description: "Falha ao gerar a comanda da cozinha.", variant: "destructive" });
+    }
+  };
+
+  const handlePrintFullOrder = async () => {
+    try {
+      toast({ title: "Preparando impressão completa..." });
+      // Small delay to ensure thermalReceiptRef content is ready
+      setTimeout(() => {
+        printReceipt(thermalReceiptRef.current?.innerHTML || "");
+      }, 300);
+    } catch (error) {
+      console.error("Erro ao imprimir pedido completo:", error);
+      toast({ 
+        title: "Erro ao imprimir", 
+        description: "Falha ao gerar o layout de impressão completo.",
+        variant: "destructive" 
+      });
+    }
+  };
+
+  if (!mesa || !pedido) {
+    return (
+      <div className="flex items-center justify-center py-20">
+        <Loader2 className="w-8 h-8 animate-spin text-primary" />
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex flex-col min-h-[calc(100vh-140px)]">
+      {/* Header - scrolls with page */}
+      <div className="space-y-4 pb-4">
+        <div className="flex items-center gap-3">
+          <Button variant="ghost" size="icon" onClick={async () => {
+            // If cart is empty and order is open, free the table
+            if (cart.length === 0 && pedido?.status === "aberto" && pedido?.pagamento_status === "aberto") {
+              await supabase.from("pdv_pedidos").delete().eq("id", pedido.id);
+              await supabase.from("pdv_mesas").update({ status: "livre", pedido_atual_id: null }).eq("id", mesaId!);
+            }
+            navigate("/lojista/pdv-mesas");
+          }}>
+            <ArrowLeft className="w-5 h-5" />
+          </Button>
+          <div>
+            <h1 className="text-xl font-bold font-display text-foreground">{mesa.nome}</h1>
+            <p className="text-xs text-muted-foreground">Pedido Nº {String(orderSequence).padStart(3, "0")}</p>
+          </div>
+          <div className="flex items-center gap-2 ml-auto">
+            <Button variant="outline" size="sm" onClick={() => setShowTransferModal(true)}>
+              <ArrowRightLeft className="w-4 h-4 mr-1" /> Trocar Mesa
+            </Button>
+            <Button variant="outline" size="sm" onClick={() => setShowQrModal(true)}>
+              <QrCode className="w-4 h-4 mr-1" /> Mesa
+            </Button>
+          </div>
+        </div>
+
+        {/* Categories - Fixed */}
+        <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-hide">
+          <button
+            onClick={() => setActiveCategory(null)}
+            className={`px-4 py-2 rounded-xl text-sm font-medium whitespace-nowrap transition-colors ${
+              !activeCategory ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground hover:bg-muted/80"
+            }`}
+          >
+            Todos
+          </button>
+          {categories.map((cat) => (
+            <button
+              key={cat}
+              onClick={() => setActiveCategory(cat)}
+              className={`px-4 py-2 rounded-xl text-sm font-medium whitespace-nowrap transition-colors ${
+                activeCategory === cat ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground hover:bg-muted/80"
+              }`}
+            >
+              {cat}
+            </button>
+          ))}
+        </div>
+        
+        {/* Full-width separator */}
+        <div className="w-full h-px bg-border" />
+      </div>
+
+      {/* Main layout */}
+      <div className="flex-1 flex flex-col md:flex-row gap-3 md:gap-6 items-start min-h-0">
+        {/* Products side - scrolls */}
+        <div className="w-full lg:flex-[2] space-y-8 pr-2 md:pr-4">
+          {categories.map((category) => {
+            const categoryProducts = filtered.filter(p => (p.categoria || "Sem categoria") === category);
+            if (categoryProducts.length === 0) return null;
+            
+            return (
+              <div key={category} className="space-y-4">
+                <div className="flex items-center gap-2">
+                  <h2 className="text-sm font-bold text-muted-foreground uppercase tracking-wider">{category}</h2>
+                  <div className="h-px bg-border flex-1" />
+                </div>
+                
+                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-4 gap-3">
+                  {categoryProducts.map((p: any) => {
+                    const hasPromo = p.preco_promocional && Number(p.preco_promocional) > 0 && (!p.promocao_validade || new Date(p.promocao_validade) >= new Date());
+                    const precoFinal = hasPromo ? Number(p.preco_promocional) : Number(p.preco);
+                    return (
+                      <motion.button
+                        key={p.id}
+                        whileTap={{ scale: 0.93 }}
+                        onClick={() => handleProductClick({ ...p, preco: precoFinal })}
+                        className="relative p-3 rounded-xl bg-card border border-border/50 shadow-card hover:shadow-elevated hover:border-primary/30 transition-all text-center active:bg-primary/5"
+                      >
+                        {hasPromo && (
+                          <div className="absolute top-2 right-2 bg-destructive text-destructive-foreground text-[10px] font-bold px-1.5 py-0.5 rounded-md z-10">PROMO</div>
+                        )}
+                        {Array.isArray(p.adicionais) && p.adicionais.length > 0 && (
+                          <div className="absolute top-2 left-2 bg-primary text-primary-foreground text-[10px] font-bold px-1.5 py-0.5 rounded-md z-10">+EXTRAS</div>
+                        )}
+                        {p.imagem_url ? (
+                          <div className="w-full aspect-square rounded-lg overflow-hidden bg-muted mb-2">
+                            <img src={p.imagem_url} alt={p.nome} className="w-full h-full object-contain" />
+                          </div>
+                        ) : (
+                          <div className="w-full aspect-square rounded-lg bg-muted flex items-center justify-center mb-2 text-4xl">
+                            🍽️
+                          </div>
+                        )}
+                        <p className="text-sm font-semibold font-display text-foreground leading-tight truncate">{p.nome}</p>
+                        <div className="mt-1">
+                          {hasPromo ? (
+                            <div className="flex items-center justify-center gap-1.5">
+                              <span className="text-xs text-muted-foreground line-through">
+                                R$ {Number(p.preco).toFixed(2).replace(".", ",")}
+                              </span>
+                              <span className="text-base font-bold text-destructive">
+                                R$ {precoFinal.toFixed(2).replace(".", ",")}
+                              </span>
+                            </div>
+                          ) : (
+                            <p className="text-base font-bold text-primary">
+                              R$ {precoFinal.toFixed(2).replace(".", ",")}
+                            </p>
+                          )}
+                        </div>
+                      </motion.button>
+                    );
+                  })}
+                </div>
+              </div>
+            );
+          })}
+          {filtered.length === 0 && (
+            <p className="text-center text-muted-foreground py-10">Nenhum produto encontrado</p>
+          )}
+        </div>
+
+        {/* Vertical separator - Visible only on MD/LG */}
+        <div className="hidden md:block w-px bg-border self-stretch" />
+
+        {/* Cart side - Fixed/Sticky on tablets (MD) and desktop (LG) */}
+        <div className="w-full md:w-[350px] lg:w-[380px] md:sticky md:top-4 md:self-start z-20">
+          <ReceiptCart
+            ref={receiptRef}
+            lojaInfo={loja}
+            orderNumStr={String(orderSequence).padStart(3, "0")}
+            clientName={mesa.nome}
+            tipoPedido="mesa"
+            title={mesa.nome}
+            subtitle={`Pedido Nº ${String(orderSequence).padStart(3, "0")} · ${new Date(pedido.created_at).toLocaleString("pt-BR")}`}
+            cart={cart}
+            total={total}
+            taxaServico={taxaServico}
+            includeServiceCharge={includeServiceCharge}
+            onToggleServiceCharge={() => setIncludeServiceCharge(!includeServiceCharge)}
+            valorPago={valorPago}
+            restante={restante}
+            payments={pagamentos.map((p: any) => ({ valor: Number(p.valor), metodo: p.metodo }))}
+            kitchenStatus={pedido.status_cozinha || "pendente"}
+            onUpdateQty={updateQty}
+            garcomNome={pedido.observacoes?.match(/Garçom:\s*([^\n\r|]+)/)?.[1]}
+            onClearMesaNotify={async () => {
+              // Update all items of this order to be standard and not new
+              const newItems = cart.map(i => ({ ...i, order_type: "local", is_new: false }));
+              updateItems.mutate(newItems);
+            }}
+
+            onRemove={removeItem}
+            onPayTotal={() => {
+              setIsPartialPayment(false);
+              setPaymentValue(restante.toFixed(2).replace(".", ","));
+              setShowPaymentModal(true);
+            }}
+            onPayPartial={() => {
+              setIsPartialPayment(true);
+              setPaymentValue("");
+              setShowPaymentModal(true);
+            }}
+            onPrint={printPdvOrder}
+            onCloseOrder={() => closeOrder.mutate()}
+            onSendToKitchen={() => sendToKitchen.mutate()}
+            onMarkReady={() => markReady.mutate()}
+            onCancelOrder={() => cancelOrder.mutate()}
+            onPrintOrder={handlePrintFullOrder}
+            showCloseButton
+            disablePayment={total <= 0}
+            submitting={closeOrder.isPending || cancelOrder.isPending}
+          />
+        </div>
+      </div>
+
+      {/* Full Order Thermal Receipt (Hidden) */}
+      <div className="hidden" aria-hidden="true">
+        <ThermalReceipt 
+          ref={thermalReceiptRef} 
+          order={{
+            ...pedido,
+            forma_pagamento: (pedido as any).metodo_pagamento || (pagamentos.length > 0 ? (pagamentos[pagamentos.length - 1] as any).metodo : "DINHEIRO"),
+            cliente_documento: (pedido as any).observacoes?.match(/CPF\/CNPJ:\s*([^\s|]+)/)?.[1] || (pedido as any).cliente_documento || null,
+            cliente_endereco_completo: (pedido as any).endereco_entrega || null
+          }} 
+          loja={loja} 
+          orderNumStr={String(orderSequence).padStart(3, "0")} 
+        />
+      </div>
+
+      {/* Payment modal */}
+      <Dialog open={showPaymentModal} onOpenChange={setShowPaymentModal}>
+        <DialogContent className="w-full max-w-full sm:max-w-xl md:max-w-2xl lg:max-w-3xl p-0 overflow-hidden gap-0 [&>button]:text-white [&>button]:opacity-100">
+          <DialogHeader className="bg-primary px-4 py-3">
+            <DialogTitle className="text-primary-foreground">
+              {isPartialPayment ? "Pagamento Parcial" : "Pagamento Total"}
+            </DialogTitle>
+          </DialogHeader>
+          <div className="p-4 md:p-6">
+            <div className="grid gap-4 md:gap-6 grid-cols-1 md:grid-cols-2">
+              {/* Left column: value, method, confirm */}
+              <div className="space-y-4 order-1">
+                <div className="relative">
+                  <label className="text-sm font-medium text-foreground">
+                    {isPartialPayment ? "Valor parcial" : "Valor total"} (restante: R$ {restante.toFixed(2).replace(".", ",")})
+                  </label>
+                  <div className="relative mt-1.5">
+                    <Input
+                      placeholder="0,00"
+                      value={paymentValue}
+                      onChange={(e) => setPaymentValue(e.target.value)}
+                      className="h-14 text-2xl font-bold pr-24"
+                      readOnly
+                      inputMode="none"
+                      onFocus={(e) => e.target.blur()}
+                    />
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => setPaymentValue("")}
+                      className="absolute right-1 top-1/2 -translate-y-1/2 h-9 px-3 text-sm font-medium text-muted-foreground hover:text-foreground"
+                    >
+                      Limpar
+                    </Button>
+                  </div>
+                  {!isPartialPayment && (
+                    <p className="text-xs text-muted-foreground mt-2">
+                      Valor total da conta a ser pago.
+                    </p>
+                  )}
+                </div>
+
+                <div className="grid grid-cols-3 gap-2">
+                  {[
+                    { key: "dinheiro", icon: Banknote, label: "Dinheiro" },
+                    { key: "cartao", icon: CreditCard, label: "Cartão" },
+                    { key: "pix", icon: Smartphone, label: "Pix" },
+                  ].map((pm) => (
+                    <button
+                      key={pm.key}
+                      onClick={() => setPaymentMethod(pm.key)}
+                      className={`p-3 rounded-xl border-2 text-center transition-colors ${
+                        paymentMethod === pm.key
+                          ? "border-primary bg-primary/5 text-primary"
+                          : "border-border hover:border-primary/30 text-muted-foreground"
+                      }`}
+                    >
+                      <pm.icon className="w-5 h-5 mx-auto mb-1" />
+                      <span className="text-xs font-medium">{pm.label}</span>
+                    </button>
+                  ))}
+                </div>
+
+                {paymentMethod === "pix" && (
+                  <Button
+                    className="w-full h-12"
+                    variant="outline"
+                    onClick={handlePixPayment}
+                    disabled={loadingPix || !paymentValue}
+                  >
+                    {loadingPix ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <QrCode className="w-4 h-4 mr-2" />}
+                    Gerar QR Code PIX
+                  </Button>
+                )}
+
+                {isPartialPayment && (
+                  <p className="text-xs text-muted-foreground">
+                    💡 Informe o valor que o cliente deseja pagar agora. O restante ficará pendente na mesa.
+                  </p>
+                )}
+
+                <Button
+                  className="w-full h-12"
+                  onClick={() => registerPayment.mutate()}
+                  disabled={registerPayment.isPending || !paymentValue}
+                >
+                  {registerPayment.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : isPartialPayment ? "Confirmar Parcial" : "Confirmar Pagamento"}
+                </Button>
+              </div>
+
+              {/* Right column: numeric keypad */}
+              <div className="order-2 md:border-l md:border-border md:pl-6">
+                <NumericKeypad
+                  value={paymentValue}
+                  onChange={setPaymentValue}
+                  total={restante}
+                />
+              </div>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Transfer modal */}
+      <Dialog open={showTransferModal} onOpenChange={setShowTransferModal}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Transferir para outra mesa</DialogTitle>
+          </DialogHeader>
+          {mesasLivres.length === 0 ? (
+            <p className="text-sm text-muted-foreground text-center py-6">Nenhuma mesa livre disponível</p>
+          ) : (
+            <div className="grid grid-cols-2 gap-3">
+              {mesasLivres.map((m: any) => (
+                <button
+                  key={m.id}
+                  onClick={() => transferTable.mutate(m.id)}
+                  className="p-4 rounded-xl border-2 border-success/30 bg-success/5 hover:bg-success/10 text-center transition-colors"
+                >
+                  <p className="font-bold font-display text-foreground">{m.nome}</p>
+                  <p className="text-xs text-muted-foreground">{m.lugares} lugares</p>
+                </button>
+              ))}
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      {/* PIX QR Code Modal */}
+      <Dialog open={!!pixData} onOpenChange={(open) => { if (!open) { setPixData(null); setPixPolling(false); } }}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <QrCode className="w-5 h-5 text-primary" />
+              Pagamento PIX
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="text-center">
+              <p className="text-2xl font-bold text-primary">
+                R$ {pixData?.amount?.toFixed(2).replace(".", ",")}
+              </p>
+              <p className="text-xs text-muted-foreground mt-1">
+                Plataforma: R$ {pixData?.comissao_plataforma?.toFixed(2).replace(".", ",")} · 
+                Lojista: R$ {pixData?.valor_lojista?.toFixed(2).replace(".", ",")}
+              </p>
+            </div>
+
+            {pixData?.qr_code_base64 && (
+              <div className="flex justify-center">
+                <div className="bg-white p-4 rounded-xl">
+                  <img
+                    src={`data:image/png;base64,${pixData.qr_code_base64}`}
+                    alt="QR Code PIX"
+                    className="w-48 h-48"
+                  />
+                </div>
+              </div>
+            )}
+
+            <div className="space-y-2">
+              <p className="text-sm font-medium text-center">Ou copie o código PIX:</p>
+              <div className="flex gap-2">
+                <div className="flex-1 bg-muted rounded-lg p-2.5 text-xs font-mono break-all max-h-20 overflow-y-auto">
+                  {pixData?.qr_code}
+                </div>
+                <Button size="sm" variant="outline" className="shrink-0 gap-1" onClick={handleCopyPix}>
+                  {pixCopied ? <><Check className="w-3.5 h-3.5 text-emerald-500" /> Copiado</> : <><Copy className="w-3.5 h-3.5" /> Copiar</>}
+                </Button>
+              </div>
+            </div>
+
+            <div className="flex items-center justify-center gap-2 text-sm text-muted-foreground">
+              {pixPolling ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin text-primary" />
+                  Aguardando confirmação do pagamento...
+                </>
+              ) : (
+                <>
+                  <Smartphone className="w-4 h-4" />
+                  Escaneie o QR Code ou cole o código no app do banco
+                </>
+              )}
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Addon Modal */}
+      <PdvAddonModal
+        open={showAddonModal}
+        onClose={() => { setShowAddonModal(false); setAddonProduct(null); }}
+        product={addonProduct}
+        segmento={(loja as any)?.segmento}
+        flavorProducts={
+          addonProduct
+            ? (addonProduct.categoria || "").toLowerCase() === "caldos"
+              ? (Array.isArray((addonProduct as any).sabores)
+                  ? ((addonProduct as any).sabores as any[])
+                      .filter((s: any) => s && (s.disponivel !== false))
+                      .map((s: any, idx: number) => ({
+                        id: `${addonProduct.id}-sabor-${idx}`,
+                        nome: String(s.nome || s.name || ""),
+                        preco: Number(s.valorExtra ?? s.valor_extra ?? 0),
+                        imagem_url: null,
+                      }))
+                  : [])
+              : (loja as any)?.segmento === "pizzaria"
+                ? produtos
+                    .filter((p: any) => p.categoria === addonProduct.categoria && p.id !== addonProduct.id && p.disponivel)
+                    .map((p: any) => ({ id: p.id, nome: p.nome, preco: Number(p.preco), imagem_url: p.imagem_url }))
+                : []
+            : []
+        }
+        onConfirm={handleAddonConfirm}
+      />
+
+      <TableQrModal 
+        open={showQrModal} 
+        onOpenChange={setShowQrModal} 
+        mesa={mesa} 
+        loja={loja} 
+      />
+
+      {/* Modal: Estabelecimento Fechado */}
+      <Dialog open={closedModal.open} onOpenChange={(o) => setClosedModal((s) => ({ ...s, open: o }))}>
+        <DialogContent className="max-w-md p-0 overflow-hidden gap-0 [&>button]:text-white [&>button]:opacity-100">
+          <DialogHeader className="bg-red-600 px-4 py-3">
+            <DialogTitle className="text-white">Estabelecimento fechado</DialogTitle>
+          </DialogHeader>
+          <div className="p-4 space-y-2">
+            <p className="text-sm text-muted-foreground">{closedModal.message}</p>
+            <p className="text-xs text-muted-foreground">
+              Ajuste o horário em <b>Configurações → Horário</b>.
+            </p>
+            <DialogFooter>
+              <Button onClick={() => setClosedModal({ open: false, message: "" })}>Entendi</Button>
+            </DialogFooter>
+          </div>
+        </DialogContent>
+      </Dialog>
+    </div>
+
+
+  );
+}

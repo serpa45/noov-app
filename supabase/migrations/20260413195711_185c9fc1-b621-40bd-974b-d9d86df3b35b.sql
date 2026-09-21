@@ -1,0 +1,1 @@
+ALTER TABLE public.lojas ADD COLUMN lembrete_aniversario boolean NOT NULL DEFAULT true;

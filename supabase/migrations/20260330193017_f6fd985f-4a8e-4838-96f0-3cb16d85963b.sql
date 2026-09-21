@@ -1,0 +1,1 @@
+UPDATE public.planos SET cta_texto = 'Assinar Start' WHERE slug = 'start';

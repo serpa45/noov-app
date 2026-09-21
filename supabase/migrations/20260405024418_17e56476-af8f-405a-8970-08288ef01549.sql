@@ -1,0 +1,1 @@
+ALTER TABLE public.entregas ADD COLUMN IF NOT EXISTS valor_total NUMERIC DEFAULT 0;

@@ -1,0 +1,163 @@
+@import url('https://fonts.googleapis.com/css2?family=Nunito:wght@400;500;600;700;800&family=Inter:wght@400;500;600&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 220 20% 97%;
+    --foreground: 220 30% 10%;
+
+    --card: 0 0% 100%;
+    --card-foreground: 220 30% 10%;
+
+    --popover: 0 0% 100%;
+    --popover-foreground: 220 30% 10%;
+
+    --primary: 220 90% 50%;
+    --primary-foreground: 0 0% 100%;
+
+    --secondary: 25 95% 55%;
+    --secondary-foreground: 0 0% 100%;
+
+    --muted: 220 15% 92%;
+    --muted-foreground: 220 10% 45%;
+
+    --accent: 25 95% 55%;
+    --accent-foreground: 0 0% 100%;
+
+    --destructive: 0 84% 60%;
+    --destructive-foreground: 0 0% 100%;
+
+    --border: 220 15% 90%;
+    --input: 220 15% 90%;
+    --ring: 220 90% 50%;
+
+    --success: 142 71% 45%;
+    --success-foreground: 0 0% 100%;
+
+    --radius: 0.75rem;
+
+    --gradient-hero: linear-gradient(135deg, hsl(220 90% 50%) 0%, hsl(240 80% 55%) 50%, hsl(260 70% 50%) 100%);
+    --gradient-cta: linear-gradient(135deg, hsl(25 95% 55%) 0%, hsl(15 90% 50%) 100%);
+    --gradient-card: linear-gradient(180deg, hsl(0 0% 100%) 0%, hsl(220 20% 98%) 100%);
+    --gradient-dark: linear-gradient(180deg, hsl(220 30% 8%) 0%, hsl(230 35% 12%) 100%);
+
+    --shadow-card: 0 4px 24px -4px hsl(220 30% 10% / 0.08);
+    --shadow-elevated: 0 12px 40px -8px hsl(220 30% 10% / 0.15);
+    --shadow-glow: 0 0 60px -12px hsl(220 90% 50% / 0.3);
+
+    --sidebar-background: 220 80% 45%;
+    --sidebar-foreground: 0 0% 100%;
+    --sidebar-primary: 0 0% 100%;
+    --sidebar-primary-foreground: 220 80% 45%;
+    --sidebar-accent: 25 95% 55%;
+    --sidebar-accent-foreground: 0 0% 100%;
+    --sidebar-border: 220 60% 55%;
+    --sidebar-ring: 0 0% 100%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  body {
+    @apply bg-background text-foreground antialiased;
+    font-family: 'Nunito', sans-serif;
+  }
+  h1, h2, h3, h4, h5, h6 {
+    font-family: 'Nunito', sans-serif;
+  }
+}
+
+@layer utilities {
+  .text-gradient-hero {
+    background: var(--gradient-hero);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+  .bg-gradient-hero {
+    background: var(--gradient-hero);
+  }
+  .bg-gradient-cta {
+    background: var(--gradient-cta);
+  }
+  .bg-gradient-dark {
+    background: var(--gradient-dark);
+  }
+  .shadow-card {
+    box-shadow: var(--shadow-card);
+  }
+  .shadow-elevated {
+    box-shadow: var(--shadow-elevated);
+  }
+  .shadow-glow {
+    box-shadow: var(--shadow-glow);
+  }
+  .scrollbar-hide::-webkit-scrollbar {
+    display: none;
+  }
+  .scrollbar-hide {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+}
+
+@keyframes stepper-pulse {
+  0%, 100% { transform: scaleX(0.3); opacity: 0.5; }
+  50% { transform: scaleX(1); opacity: 1; }
+}
+.animate-stepper-pulse {
+  animation: stepper-pulse 1.5s ease-in-out infinite;
+  transform-origin: left;
+}
+
+@keyframes bounce-horizontal {
+  0%, 100% { transform: translateX(0); }
+  50% { transform: translateX(-4px); }
+}
+.animate-bounce-horizontal {
+  animation: bounce-horizontal 1s ease-in-out infinite;
+}
+
+@keyframes event-shine {
+  0% { background-position: -50% 0; }
+  15% { background-position: 150% 0; }
+  100% { background-position: 150% 0; }
+}
+.animate-event-shine {
+  animation: event-shine 7s ease-in-out infinite;
+  background-image: linear-gradient(100deg, transparent 40%, rgba(255,255,255,0.75) 50%, transparent 60%);
+  background-size: 50% 100%;
+  background-repeat: no-repeat;
+}
+
+@keyframes status-ring-pulse {
+  0%, 100% { transform: scale(1); opacity: 0.45; }
+  50% { transform: scale(1.28); opacity: 0.15; }
+}
+.animate-status-ring-pulse {
+  animation: status-ring-pulse 2.5s ease-in-out infinite;
+}
+
+@keyframes border-pulse {
+  0%, 100% { opacity: 0.4; transform: scale(1); }
+  50% { opacity: 0.8; transform: scale(1.06); }
+}
+.animate-border-pulse {
+  animation: border-pulse 2s ease-in-out infinite;
+}
+@keyframes spin-pulse {
+  0%, 60%, 100% { transform: rotate(0deg); }
+  70% { transform: rotate(90deg); }
+  80% { transform: rotate(180deg); }
+  90% { transform: rotate(270deg); }
+  95% { transform: rotate(360deg); }
+}
+.animate-spin-pulse {
+  animation: spin-pulse 2s ease-in-out infinite;
+}
+

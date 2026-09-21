@@ -1,0 +1,1 @@
+ALTER TABLE public.lojas ADD COLUMN IF NOT EXISTS categorias_estilo jsonb NOT NULL DEFAULT '{}'::jsonb;

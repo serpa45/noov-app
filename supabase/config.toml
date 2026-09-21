@@ -1,0 +1,4 @@
+project_id = "mwnjoglolbyeyrmkqqqc"
+
+[functions.lojista-recover-password]
+verify_jwt = false

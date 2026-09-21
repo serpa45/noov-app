@@ -1,0 +1,1 @@
+ALTER TABLE public.lojas ADD COLUMN impressao_automatica boolean NOT NULL DEFAULT false;

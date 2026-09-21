@@ -1,0 +1,1 @@
+ALTER TABLE public.lojas ADD COLUMN IF NOT EXISTS mais_vendidos_ativo BOOLEAN NOT NULL DEFAULT true;

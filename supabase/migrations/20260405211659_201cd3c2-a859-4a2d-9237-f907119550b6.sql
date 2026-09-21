@@ -1,0 +1,1 @@
+ALTER TABLE public.entregas ADD COLUMN IF NOT EXISTS status_timestamps jsonb NOT NULL DEFAULT '{}'::jsonb;

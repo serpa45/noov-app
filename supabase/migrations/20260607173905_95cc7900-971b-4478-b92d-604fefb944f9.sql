@@ -1,0 +1,2 @@
+ALTER TABLE public.lojas ADD COLUMN IF NOT EXISTS integration_fee_rate NUMERIC DEFAULT 0;
+COMMENT ON COLUMN public.lojas.integration_fee_rate IS 'Taxa de integração do Mercado Pago em porcentagem (ex: 1.5 para 1.5%)';

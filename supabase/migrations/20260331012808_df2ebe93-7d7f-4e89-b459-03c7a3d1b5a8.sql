@@ -1,0 +1,1 @@
+ALTER TABLE public.planos ADD COLUMN comissao_afiliado numeric NOT NULL DEFAULT 10;

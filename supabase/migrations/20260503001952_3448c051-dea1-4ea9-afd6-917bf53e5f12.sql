@@ -1,0 +1,2 @@
+-- No direct SQL changes needed for this edge function implementation as it relies on environment variables for the private key.
+-- However, we ensure the function can be called by authenticated users if needed.

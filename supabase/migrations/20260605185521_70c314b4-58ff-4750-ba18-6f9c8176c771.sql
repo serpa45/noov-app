@@ -1,0 +1,1 @@
+CREATE POLICY "Permitir leitura pública de usuários da loja para comanda" ON public.loja_usuarios FOR SELECT USING (true);

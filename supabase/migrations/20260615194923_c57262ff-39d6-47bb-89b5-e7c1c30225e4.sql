@@ -1,0 +1,1 @@
+ALTER TABLE public.system_rating_settings ADD COLUMN IF NOT EXISTS event_image_url TEXT;

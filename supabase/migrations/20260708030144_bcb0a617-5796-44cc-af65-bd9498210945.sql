@@ -1,0 +1,1 @@
+UPDATE public.app_version SET major = 1, minor = 3, updated_at = now() WHERE id = 1;

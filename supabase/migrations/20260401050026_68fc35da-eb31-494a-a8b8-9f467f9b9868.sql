@@ -1,0 +1,1 @@
+ALTER TABLE public.saques ADD COLUMN motivo_rejeicao text;

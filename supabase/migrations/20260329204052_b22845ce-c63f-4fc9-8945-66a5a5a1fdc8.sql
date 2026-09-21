@@ -1,0 +1,1 @@
+ALTER TABLE public.lojas ADD COLUMN IF NOT EXISTS formas_pagamento jsonb DEFAULT '["Dinheiro","PIX","Cartão de Crédito","Cartão de Débito"]'::jsonb;

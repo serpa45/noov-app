@@ -1,0 +1,1 @@
+ALTER TABLE public.lojas ADD COLUMN IF NOT EXISTS impressao_automatica_qz BOOLEAN DEFAULT false;

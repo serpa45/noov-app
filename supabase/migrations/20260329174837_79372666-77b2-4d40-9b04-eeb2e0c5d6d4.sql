@@ -1,0 +1,1 @@
+ALTER TABLE public.lojas ADD COLUMN categorias_ordem jsonb DEFAULT '[]'::jsonb;

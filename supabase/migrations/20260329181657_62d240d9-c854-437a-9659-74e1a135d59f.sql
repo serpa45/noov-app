@@ -1,0 +1,1 @@
+ALTER TABLE public.lojas ADD COLUMN banner_url text DEFAULT NULL;

@@ -1,0 +1,1 @@
+ALTER TABLE public.lojas ADD COLUMN IF NOT EXISTS impressao_duas_vias BOOLEAN DEFAULT FALSE;

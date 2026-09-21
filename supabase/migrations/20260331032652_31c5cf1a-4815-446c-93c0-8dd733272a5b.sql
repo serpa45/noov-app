@@ -1,0 +1,1 @@
+ALTER TABLE public.loja_planos ADD COLUMN expira_em timestamp with time zone DEFAULT NULL;

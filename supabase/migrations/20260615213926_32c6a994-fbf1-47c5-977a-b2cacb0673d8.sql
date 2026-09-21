@@ -1,0 +1,1 @@
+ALTER TABLE public.lojas ADD COLUMN IF NOT EXISTS ocultar_evento boolean NOT NULL DEFAULT false;

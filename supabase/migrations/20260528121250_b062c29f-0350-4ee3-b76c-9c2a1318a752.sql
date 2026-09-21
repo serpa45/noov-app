@@ -1,0 +1,1 @@
+ALTER TABLE public.produtos ADD COLUMN IF NOT EXISTS sabores jsonb NOT NULL DEFAULT '[]'::jsonb;

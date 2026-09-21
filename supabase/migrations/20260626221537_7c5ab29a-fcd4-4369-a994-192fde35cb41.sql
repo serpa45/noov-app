@@ -1,0 +1,1 @@
+ALTER TABLE public.lojas ADD COLUMN IF NOT EXISTS pdv_venda_fora_horario boolean NOT NULL DEFAULT false;

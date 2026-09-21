@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+    <title>NOOV - Seu Delivery Profissional sem Depender de Marketplace</title>
+    <meta name="description" content="Pare de perder dinheiro no iFood. Crie seu delivery profissional em minutos. Sistema completo para pizzarias, hamburguerias, açaiterias e lanchonetes.">
+    <meta name="author" content="NOOV" />
+    <meta name="theme-color" content="#000000" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-title" content="NOOV">
+    <link id="manifest-link" rel="manifest">
+    <link id="apple-touch-icon" rel="apple-touch-icon" href="/favicon.ico">
+    <script>
+      (function() {
+        var path = window.location.pathname;
+        var manifest = '/manifest-cliente.json';
+        var title = 'NOOV';
+        var isStoreSlug = false;
+        var isComanda = false;
+
+        if (path.startsWith('/entregas') || path.startsWith('/entregador')) {
+          manifest = '/manifest-entregador.json';
+          title = 'Entregador';
+        } else if (path.startsWith('/lojista/pdv-garcom')) {
+          manifest = '/manifest-garcom.json';
+          title = 'Comanda';
+        } else if (path.startsWith('/comanda')) {
+          manifest = '/manifest-garcom.json';
+          title = 'Comanda';
+          isComanda = true;
+        } else if (path.startsWith('/lojista')) {
+          manifest = '/manifest-lojista.json';
+          title = 'Lojista';
+        } else if (path !== '/' && !path.startsWith('/admin') && !path.startsWith('/afiliado') && !path.startsWith('/login') && !path.startsWith('/cadastro') && !path.startsWith('/demo') && !path.startsWith('/acompanhar')) {
+          isStoreSlug = true;
+        }
+
+        if (isStoreSlug) {
+          document.getElementById('manifest-link').removeAttribute('href');
+        } else if (isComanda) {
+          // Build a dynamic manifest so start_url/scope point to the waiter's store URL
+          // e.g. /comanda/<slug>  -> installed app opens directly at that store
+          var segments = path.split('/').filter(Boolean); // ["comanda", "<slug>", ...]
+          var slug = segments[1] || '';
+          var startUrl = slug ? '/comanda/' + slug : '/comanda/';
+          fetch('/manifest-garcom.json')
+            .then(function (r) { return r.json(); })
+            .then(function (m) {
+              m.start_url = startUrl;
+              m.scope = startUrl;
+              m.id = startUrl;
+              if (slug) {
+                m.name = 'Comanda - ' + slug;
+                m.short_name = 'Comanda';
+              }
+              var blob = new Blob([JSON.stringify(m)], { type: 'application/manifest+json' });
+              document.getElementById('manifest-link').setAttribute('href', URL.createObjectURL(blob));
+            })
+            .catch(function () {
+              document.getElementById('manifest-link').setAttribute('href', manifest);
+            });
+        } else {
+          document.getElementById('manifest-link').setAttribute('href', manifest);
+        }
+        document.querySelector('meta[name="apple-mobile-web-app-title"]').setAttribute('content', title);
+      })();
+    </script>
+    
+    <meta property="og:type" content="website" />
+    <meta property="og:image" content="https://pub-bb2e103a32db4e198524a2e9ed8f35b4.r2.dev/54e793c4-c240-45ec-9b26-557d5108da70/id-preview-61e7ff76--912e724a-aa86-4eab-9873-bec64860bd01.lovable.app-1775308532322.png">
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:image" content="https://pub-bb2e103a32db4e198524a2e9ed8f35b4.r2.dev/54e793c4-c240-45ec-9b26-557d5108da70/id-preview-61e7ff76--912e724a-aa86-4eab-9873-bec64860bd01.lovable.app-1775308532322.png">
+  <meta property="og:title" content="NOOV - Seu Delivery Profissional sem Depender de Marketplace">
+  <meta name="twitter:title" content="NOOV - Seu Delivery Profissional sem Depender de Marketplace">
+  <meta property="og:description" content="Pare de perder dinheiro no iFood. Crie seu delivery profissional em minutos. Sistema completo para pizzarias, hamburguerias, açaiterias e lanchonetes.">
+  <meta name="twitter:description" content="Pare de perder dinheiro no iFood. Crie seu delivery profissional em minutos. Sistema completo para pizzarias, hamburguerias, açaiterias e lanchonetes.">
+</head>
+
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

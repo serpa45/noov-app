@@ -1,0 +1,1 @@
+UPDATE public.comissoes SET percentual = 35, valor_comissao = ROUND(valor_pedido * 0.35, 2) WHERE id = '022e9fa1-c27d-4d00-9a57-c8260329d769';

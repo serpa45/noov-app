@@ -1,0 +1,1 @@
+CREATE POLICY "Anyone can view active plans" ON public.loja_planos FOR SELECT USING (ativo = true);

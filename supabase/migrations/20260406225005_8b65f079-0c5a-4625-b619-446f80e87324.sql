@@ -1,0 +1,1 @@
+ALTER TABLE public.lojas ADD COLUMN mapa_entrega_ativo boolean NOT NULL DEFAULT true;

@@ -1,0 +1,2 @@
+ALTER TABLE public.produtos ADD COLUMN IF NOT EXISTS max_adicionais integer DEFAULT NULL;
+COMMENT ON COLUMN public.produtos.max_adicionais IS 'Maximum number of adicionais (add-ons) the customer can select. NULL or 0 = unlimited.';

@@ -1,0 +1,1 @@
+ALTER TABLE public.pedidos ADD COLUMN IF NOT EXISTS status_historico jsonb NOT NULL DEFAULT '[]'::jsonb;
