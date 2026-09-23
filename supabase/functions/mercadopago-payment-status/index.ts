@@ -9,9 +9,10 @@ const corsHeaders = {
 async function activatePlan(
   supabaseAdmin: any,
   ref: { loja_id: string; plano_id: string; user_id: string },
-  valorPago?: number
+  valorPago?: number,
+  paymentId?: string | number
 ) {
-  // Get plan details
+  // 1. Get plan details
   const { data: plano } = await supabaseAdmin
     .from("planos")
     .select("*")
@@ -23,7 +24,7 @@ async function activatePlan(
     return false;
   }
 
-  // Calculate expiration: 30 days from now, or 30 days from current expiration if still active
+  // 2. Calculate expiration: 30 days from now, or 30 days from current expiration if still active
   const { data: currentPlan } = await supabaseAdmin
     .from("loja_planos")
     .select("expira_em, plano_id, promo_pagamentos_feitos")
@@ -44,7 +45,7 @@ async function activatePlan(
   const expiraEm = new Date(baseDate);
   expiraEm.setDate(expiraEm.getDate() + 30);
 
-  const finalPrice = valorPago ?? Number(plano.preco);
+  const finalPrice = valorPago != null ? Number(valorPago) : Number(plano.preco);
 
   // Calculate promo payments
   let promoPagamentosFeitos = currentPlan?.promo_pagamentos_feitos || 0;
@@ -59,7 +60,7 @@ async function activatePlan(
     promoPagamentosFeitos += 1;
   }
 
-  // Upsert loja_planos
+  // 3. Upsert loja_planos
   const { error: upsertErr } = await supabaseAdmin
     .from("loja_planos")
     .upsert(
@@ -78,11 +79,112 @@ async function activatePlan(
     );
 
   if (upsertErr) {
-    console.error("Upsert error:", upsertErr);
+    console.error("Upsert error in loja_planos:", upsertErr);
     return false;
   }
 
   console.log(`Plan ${plano.nome} activated for store ${ref.loja_id}, expires at ${expiraEm.toISOString()}`);
+
+  // 4. Record payment in pagamentos_loja (Financial / Invoices history)
+  const extId = paymentId ? String(paymentId) : null;
+  let alreadyRecorded = false;
+  if (extId) {
+    const { data: existingPag } = await supabaseAdmin
+      .from("pagamentos_loja")
+      .select("id")
+      .eq("payment_external_id", extId)
+      .maybeSingle();
+    if (existingPag) {
+      alreadyRecorded = true;
+    }
+  }
+
+  if (!alreadyRecorded) {
+    const { error: pagErr } = await supabaseAdmin
+      .from("pagamentos_loja")
+      .insert({
+        loja_id: ref.loja_id,
+        plano_id: ref.plano_id,
+        plano_nome: plano.nome,
+        valor: finalPrice,
+        metodo: "mercadopago",
+        status: "aprovado",
+        payment_external_id: extId,
+      });
+
+    if (pagErr) {
+      console.error("Payment record error in pagamentos_loja:", pagErr);
+    } else {
+      console.log(`Payment of R$ ${finalPrice.toFixed(2)} recorded in pagamentos_loja for store ${ref.loja_id}`);
+    }
+  }
+
+  // 5. Generate affiliate commission (if store has an affiliate)
+  try {
+    const { data: loja } = await supabaseAdmin
+      .from("lojas")
+      .select("afiliado_id")
+      .eq("id", ref.loja_id)
+      .single();
+
+    if (loja?.afiliado_id) {
+      const { data: profile } = await supabaseAdmin
+        .from("profiles")
+        .select("comissao_percent")
+        .eq("user_id", loja.afiliado_id)
+        .single();
+
+      const { data: globalConfig } = await supabaseAdmin
+        .from("configuracoes_globais")
+        .select("valor")
+        .eq("chave", "comissao_afiliado_percent")
+        .maybeSingle();
+
+      const globalComissao = globalConfig?.valor ? parseFloat(globalConfig.valor) : 10;
+
+      // Priority: Affiliate specific > Global config
+      const percentual =
+        profile?.comissao_percent != null
+          ? parseFloat(profile.comissao_percent)
+          : globalComissao;
+
+      const valorComissao = Number(((finalPrice * percentual) / 100).toFixed(2));
+
+      // Avoid duplicate commission in the last 15 minutes for the same store
+      const fifteenMinutesAgo = new Date(Date.now() - 15 * 60 * 1000).toISOString();
+      const { data: existingComissao } = await supabaseAdmin
+        .from("comissoes")
+        .select("id")
+        .eq("loja_id", ref.loja_id)
+        .eq("afiliado_id", loja.afiliado_id)
+        .gte("created_at", fifteenMinutesAgo)
+        .maybeSingle();
+
+      if (!existingComissao && valorComissao > 0) {
+        const { error: comissaoErr } = await supabaseAdmin
+          .from("comissoes")
+          .insert({
+            afiliado_id: loja.afiliado_id,
+            loja_id: ref.loja_id,
+            valor_pedido: finalPrice,
+            percentual,
+            valor_comissao: valorComissao,
+            status: "pendente",
+          });
+
+        if (comissaoErr) {
+          console.error("Commission insert error:", comissaoErr);
+        } else {
+          console.log(`Commission of R$${valorComissao.toFixed(2)} (${percentual}%) created for affiliate ${loja.afiliado_id}`);
+        }
+      } else if (existingComissao) {
+        console.log(`Commission already exists for store ${ref.loja_id} in the last 15 minutes`);
+      }
+    }
+  } catch (comErr) {
+    console.error("Commission generation error:", comErr);
+  }
+
   return true;
 }
 
@@ -125,7 +227,7 @@ Deno.serve(async (req) => {
     const payment = await mpRes.json();
     console.log(`Payment ${payment_id} status: ${payment.status}`);
 
-    // If approved, activate the plan directly (fallback in case webhook didn't fire)
+    // If approved, activate the plan, record in pagamentos_loja and generate affiliate commission
     if (payment.status === "approved") {
       let ref: { loja_id: string; plano_id: string; user_id: string } | null = null;
 
@@ -153,23 +255,18 @@ Deno.serve(async (req) => {
           Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
         );
 
-        // Check if plan was already activated by webhook (expira_em in the future)
-        const { data: existingPlan } = await supabaseAdmin
-          .from("loja_planos")
-          .select("expira_em")
-          .eq("loja_id", ref.loja_id)
-          .eq("ativo", true)
+        // Check if this payment was already processed in pagamentos_loja
+        const { data: existingPag } = await supabaseAdmin
+          .from("pagamentos_loja")
+          .select("id")
+          .eq("payment_external_id", String(payment_id))
           .maybeSingle();
 
-        const alreadyActivated =
-          existingPlan?.expira_em &&
-          new Date(existingPlan.expira_em) > new Date(Date.now() + 24 * 60 * 60 * 1000); // more than 1 day in future
-
-        if (!alreadyActivated) {
-          console.log(`Webhook may not have fired. Activating plan directly for store ${ref.loja_id}`);
-          await activatePlan(supabaseAdmin, ref, payment.transaction_amount);
+        if (!existingPag) {
+          console.log(`Activating plan, recording financial invoice and affiliate commission for store ${ref.loja_id}`);
+          await activatePlan(supabaseAdmin, ref, payment.transaction_amount, payment_id);
         } else {
-          console.log(`Plan already activated by webhook for store ${ref.loja_id}`);
+          console.log(`Payment ${payment_id} already recorded for store ${ref.loja_id}`);
         }
       } else {
         console.error("Could not extract ref from payment:", payment_id);
