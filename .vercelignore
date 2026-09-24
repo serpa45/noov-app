@@ -1,0 +1,8 @@
+# Vercel Ignore File
+*.zip
+*.backup
+*.tar.gz
+/scratch_backup_inspect/
+/bucket-*
+/noov_*
+/supabase/
