@@ -130,10 +130,45 @@ const RegisterStore = () => {
       const { data: authData, error: authError } = await supabase.auth.signUp({
         email,
         password,
-        options: { data: { full_name: ownerName, role: "lojista" } },
+        options: {
+          data: {
+            full_name: ownerName,
+            role: "lojista",
+            phone,
+            data_nascimento: birthDate || null,
+            security_answer: securityAnswer.trim().toLowerCase(),
+            store_name: storeName,
+            store_slug: storeSlug,
+            segmento: selectedSegment,
+            documento: documento || null,
+            afiliado_id: refAfiliado ? refAfiliado.user_id : null,
+          },
+        },
       });
       if (authError) throw authError;
       if (!authData.user) throw new Error("Erro ao criar conta");
+
+      // Se o e-mail já existia anteriormente no Supabase Auth, identities vem vazio
+      if (authData.user.identities && authData.user.identities.length === 0) {
+        throw new Error("Este e-mail já está cadastrado no sistema. Faça login ou utilize outro e-mail.");
+      }
+
+      // Se a sessão não veio imediatamente no signUp, tentar login direto com a senha informada
+      let currentSession = authData.session;
+      if (!currentSession) {
+        const { data: signInData, error: signInError } = await supabase.auth.signInWithPassword({
+          email,
+          password,
+        });
+
+        if (signInData?.session) {
+          currentSession = signInData.session;
+        } else if (signInError?.message?.toLowerCase().includes("email not confirmed")) {
+          throw new Error("A confirmação de e-mail ainda está ATIVA no Supabase. É obrigatório desativar 'Confirm email' em Authentication > Providers > Email no painel do Supabase.");
+        } else if (signInError) {
+          throw new Error(signInError.message || "Erro ao autenticar usuário.");
+        }
+      }
 
       const userId = authData.user.id;
 
@@ -141,20 +176,33 @@ const RegisterStore = () => {
       await supabase.from("profiles").update({ phone, data_nascimento: birthDate || null, security_answer: securityAnswer.trim().toLowerCase() }).eq("user_id", userId);
 
       // 3. Create store (link to affiliate if ref exists)
-      const lojaInsert: any = {
-        user_id: userId,
-        nome: storeName,
-        slug: storeSlug,
-        segmento: selectedSegment,
-        documento: documento || null,
-      };
-      if (refAfiliado) lojaInsert.afiliado_id = refAfiliado.user_id;
-      const { error: storeError } = await supabase.from("lojas").insert(lojaInsert);
-      if (storeError) throw storeError;
+      const { data: existingLoja } = await supabase
+        .from("lojas")
+        .select("id")
+        .eq("slug", storeSlug)
+        .maybeSingle();
+
+      if (!existingLoja) {
+        const lojaInsert: any = {
+          user_id: userId,
+          nome: storeName,
+          slug: storeSlug,
+          segmento: selectedSegment,
+          documento: documento || null,
+        };
+        if (refAfiliado) lojaInsert.afiliado_id = refAfiliado.user_id;
+        const { error: storeError } = await supabase.from("lojas").insert(lojaInsert);
+        if (storeError) {
+          if (storeError.message?.toLowerCase().includes("row-level security")) {
+            throw new Error("Erro de permissão (RLS): o usuário não possui sessão ativa. Verifique se 'Confirm email' está desativado no painel do Supabase.");
+          }
+          throw storeError;
+        }
+      }
 
       toast({
         title: "Loja criada com sucesso! 🎉",
-        description: "Verifique seu e-mail para confirmar a conta.",
+        description: "Sua loja foi cadastrada com sucesso.",
       });
       navigate("/lojista/confirmacao", {
         state: { storeName, storeSlug },
