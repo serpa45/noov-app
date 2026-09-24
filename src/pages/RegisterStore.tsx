@@ -119,11 +119,20 @@ const RegisterStore = () => {
     step === 1
       ? !!selectedSegment
       : step === 2
-      ? !!(storeName && ownerName && email && phone && birthDate && documento && password && !storeNameExists && acceptedTerms)
+      ? !!(storeName && ownerName && email && phone && birthDate && documento && password && password.length >= 6 && !storeNameExists && acceptedTerms)
       : securityAnswer.trim().length >= 2;
 
   const handleCreateStore = async () => {
     if (!selectedSegment || !storeName || !email || !password || !ownerName || !phone) return;
+    if (password.length < 6) {
+      toast({
+        title: "Senha muito curta",
+        description: "A senha deve ter no mínimo 6 caracteres.",
+        variant: "destructive",
+      });
+      setStep(2);
+      return;
+    }
     setLoading(true);
     try {
       // 1. Sign up the user (trigger auto-creates profile + role)
@@ -208,9 +217,14 @@ const RegisterStore = () => {
         state: { storeName, storeSlug },
       });
     } catch (error: any) {
+      let desc = error.message || "Tente novamente.";
+      if (desc.toLowerCase().includes("at least 6 characters") || desc.toLowerCase().includes("weak_password")) {
+        desc = "A senha deve ter no mínimo 6 caracteres.";
+        setStep(2);
+      }
       toast({
         title: "Erro ao criar loja",
-        description: error.message || "Tente novamente.",
+        description: desc,
         variant: "destructive",
       });
     } finally {
@@ -471,11 +485,21 @@ const RegisterStore = () => {
                     <Label className="text-xs">Senha <span className="text-destructive">*</span></Label>
                     <div className="relative mt-1">
                       <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-                      <Input type={showPassword ? "text" : "password"} placeholder="Mínimo 6 caracteres" className="pl-10 pr-10 h-12 text-lg md:text-lg" value={password} onChange={(e) => setPassword(e.target.value)} />
+                      <Input
+                        type={showPassword ? "text" : "password"}
+                        placeholder="Mínimo 6 caracteres"
+                        minLength={6}
+                        className={`pl-10 pr-10 h-12 text-lg md:text-lg ${password && password.length < 6 ? "border-destructive focus-visible:ring-destructive" : ""}`}
+                        value={password}
+                        onChange={(e) => setPassword(e.target.value)}
+                      />
                       <button type="button" onClick={() => setShowPassword(!showPassword)} className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors">
                         {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                       </button>
                     </div>
+                    {password && password.length < 6 && (
+                      <p className="text-xs text-destructive mt-1 font-medium">A senha deve ter no mínimo 6 caracteres.</p>
+                    )}
                   </div>
                   
                   <div className="flex items-start space-x-2 pt-2">
