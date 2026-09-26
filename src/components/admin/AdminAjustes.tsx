@@ -6,7 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { useToast } from "@/hooks/use-toast";
-import { Loader2, Save, Clock, Percent, DollarSign, KeyRound, Printer } from "lucide-react";
+import { Loader2, Save, Clock, Percent, DollarSign, KeyRound, Printer, Wrench, ExternalLink } from "lucide-react";
 
 
 const useGlobalConfig = (chave: string) => {
@@ -61,6 +61,7 @@ const AdminAjustes = () => {
   const [masterLojista, setMasterLojista] = useState("");
   const [masterAfiliado, setMasterAfiliado] = useState("");
   const [taxaIntegracao, setTaxaIntegracao] = useState("");
+  const [modoManutencao, setModoManutencao] = useState(false);
 
   const { data: config, isLoading: loadingTeste } = useGlobalConfig("dias_teste_gratis");
   const { data: comissaoConfig, isLoading: loadingComissao } = useGlobalConfig("comissao_afiliado_percent");
@@ -68,9 +69,17 @@ const AdminAjustes = () => {
   const { data: masterLojistaConfig, isLoading: loadingMasterLojista } = useGlobalConfig("master_code_lojista");
   const { data: masterAfiliadoConfig, isLoading: loadingMasterAfiliado } = useGlobalConfig("master_code_afiliado");
   const { data: taxaIntegracaoConfig, isLoading: loadingTaxaIntegracao } = useGlobalConfig("taxa_integracao_mercado_pago");
+  const { data: manutencaoConfig } = useGlobalConfig("modo_manutencao");
 
   const saveMasterLojistaMutation = useSaveConfig("master_code_lojista");
   const saveMasterAfiliadoMutation = useSaveConfig("master_code_afiliado");
+  const saveManutencaoMutation = useSaveConfig("modo_manutencao");
+
+  useEffect(() => {
+    if (manutencaoConfig?.valor !== undefined) {
+      setModoManutencao(manutencaoConfig.valor === "true");
+    }
+  }, [manutencaoConfig]);
 
   useEffect(() => {
     if (config?.valor !== undefined) {
@@ -208,6 +217,61 @@ const AdminAjustes = () => {
   return (
     <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
       
+      {/* Modo de Manutenção */}
+      <div className="rounded-2xl border border-amber-500/40 bg-amber-500/5 p-6 shadow-card space-y-4 md:col-span-2 lg:col-span-3">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div className="flex items-center gap-2">
+            <Wrench className="w-5 h-5 text-amber-600" />
+            <h3 className="text-base font-bold font-display text-foreground">Modo de Manutenção Temporária</h3>
+          </div>
+          <div className="flex items-center gap-2">
+            <span className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold ${
+              modoManutencao ? "bg-amber-500 text-white" : "bg-muted text-muted-foreground"
+            }`}>
+              <span className={`h-2 w-2 rounded-full ${modoManutencao ? "bg-white animate-ping" : "bg-muted-foreground"}`} />
+              {modoManutencao ? "Manutenção Ativa (Lojistas e Clientes Bloqueados)" : "Sistema Online (Normal)"}
+            </span>
+          </div>
+        </div>
+        <p className="text-sm text-muted-foreground">
+          Quando ativado, lojistas e clientes que acessarem o site e os cardápios verão a página com o aviso de manutenção temporária. 
+          A área administrativa (<code className="bg-muted px-1.5 py-0.5 rounded text-xs text-foreground font-mono">/admin</code>) continua acessível normalmente para você.
+        </p>
+
+        <div className="flex items-center justify-between pt-2 border-t border-amber-500/20">
+          <div className="space-y-0.5">
+            <Label className="text-sm font-semibold">Ativar Página de Manutenção</Label>
+            <p className="text-xs text-muted-foreground">
+              {modoManutencao ? "O aviso está visível para lojistas e clientes" : "O sistema está operando normalmente sem bloqueio"}
+            </p>
+          </div>
+          <Switch
+            checked={modoManutencao}
+            onCheckedChange={(checked) => {
+              setModoManutencao(checked);
+              saveManutencaoMutation.mutate({
+                valor: checked ? "true" : "false",
+                existingId: manutencaoConfig?.id
+              });
+            }}
+            disabled={saveManutencaoMutation.isPending}
+          />
+        </div>
+
+        <div className="pt-2 flex items-center gap-3">
+          <Button
+            variant="outline"
+            size="sm"
+            asChild
+            className="text-xs gap-1.5"
+          >
+            <a href="/manutencao" target="_blank" rel="noreferrer">
+              <ExternalLink className="w-3.5 h-3.5" />
+              Visualizar Página de Manutenção (/manutencao)
+            </a>
+          </Button>
+        </div>
+      </div>
       
       {/* Teste Grátis */}
       <div className="rounded-2xl border border-border/50 bg-card p-6 shadow-card space-y-4">

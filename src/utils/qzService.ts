@@ -1,6 +1,7 @@
 import * as qz from "qz-tray";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
+import { DEFAULT_QZ_CERTIFICATE, DEFAULT_QZ_PRIVATE_KEY, signWithWebCrypto } from "./qzSecurity";
 
 export interface PrinterInfo {
   name: string;
@@ -14,6 +15,8 @@ class QZService {
   private isConnected: boolean = false;
   private connectingPromise: Promise<void> | null = null;
   private isSecurityConfigured: boolean = false;
+  private readonly signatureEndpoint = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/qz-tray-signature`;
+  private readonly anonKey = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
 
   private constructor() {}
 
@@ -25,61 +28,108 @@ class QZService {
   }
 
   /**
-   * Configure digital security for QZ Tray to avoid "Untrusted" popups
+   * Configure digital security for QZ Tray to avoid "Untrusted" popups and enable silent printing
    */
-  private async configureSecurity(): Promise<void> {
+  private configureSecurity(): void {
     if (this.isSecurityConfigured) return;
 
     try {
-      // QZ Tray defaults to SHA1. Our backend signs with SHA-256, so the
-      // browser client must explicitly announce SHA256 or QZ shows
-      // "Cannot verify trust - Invalid Signature".
       qz.security.setSignatureAlgorithm("SHA256");
 
-      // Set the certificate promise
-      qz.security.setCertificatePromise(async () => {
-        const { data, error } = await supabase.functions.invoke('qz-tray-signature', {
-          method: 'GET'
-        });
-        
-        if (error) {
-          console.warn("Could not fetch QZ certificate, using anonymous mode:", error);
-          throw error;
-        }
-        if (typeof data !== 'string') {
-          throw new Error("Certificado QZ inválido retornado pelo servidor");
-        }
-        return data;
+      // Busca um certificado remoto assinado pelo backend e cai no cert local se falhar.
+      qz.security.setCertificatePromise((resolve: (cert: string) => void) => {
+        void this.getCertificate()
+          .then(resolve)
+          .catch(() => resolve(DEFAULT_QZ_CERTIFICATE));
       });
 
-      // Set the signature promise
-      qz.security.setSignaturePromise(async (toSign) => {
-        const { data, error } = await supabase.functions.invoke('qz-tray-signature', {
-          body: { request: toSign }
-        });
-        
-        if (error) {
-          console.error("QZ Signature error:", error);
-          throw error;
-        }
-        if (typeof data !== 'string') {
-          throw new Error("Assinatura QZ inválida retornada pelo servidor");
-        }
-        return data;
+      // Assinatura criptográfica — prioriza assinatura remota para evitar conexão anônima.
+      qz.security.setSignaturePromise((toSign: string) => {
+        return (resolve: (sig: string) => void, reject: (err: any) => void) => {
+          void this.signPayload(toSign)
+            .then(resolve)
+            .catch(reject);
+        };
       });
 
+      console.log("QZ Tray: Segurança configurada (certificado remoto/local + assinatura SHA-256).");
       this.isSecurityConfigured = true;
-      console.log("QZ Tray security configured");
     } catch (err) {
-      console.error("Failed to configure QZ Tray security:", err);
+      console.error("QZ Tray: Erro CRÍTICO ao configurar segurança:", err);
+      // NÃO anula o certificado — melhor tentar com segurança parcial do que sem nenhuma
+      this.isSecurityConfigured = true;
     }
+  }
+
+  private async getAuthHeaders(contentTypeJson = false): Promise<Record<string, string>> {
+    const headers: Record<string, string> = {};
+    if (contentTypeJson) headers["Content-Type"] = "application/json";
+    if (this.anonKey) headers.apikey = this.anonKey;
+
+    try {
+      const { data } = await supabase.auth.getSession();
+      const token = data.session?.access_token;
+      if (token) {
+        headers.Authorization = `Bearer ${token}`;
+      }
+    } catch {
+      // sem sessão autenticada; segue com apikey
+    }
+
+    return headers;
+  }
+
+  private async getCertificate(): Promise<string> {
+    if (!this.signatureEndpoint || !this.anonKey) {
+      return DEFAULT_QZ_CERTIFICATE;
+    }
+
+    const res = await fetch(this.signatureEndpoint, {
+      method: "GET",
+      headers: await this.getAuthHeaders(false),
+    });
+
+    if (!res.ok) {
+      throw new Error(`QZ certificate endpoint failed: ${res.status}`);
+    }
+
+    const cert = (await res.text()).trim();
+    if (!cert.includes("BEGIN CERTIFICATE")) {
+      throw new Error("Invalid certificate response");
+    }
+    return cert;
+  }
+
+  private async signPayload(toSign: string): Promise<string> {
+    // 1) Tenta assinatura remota da edge function (sem expor chave privada no frontend)
+    if (this.signatureEndpoint && this.anonKey) {
+      try {
+        const res = await fetch(this.signatureEndpoint, {
+          method: "POST",
+          headers: await this.getAuthHeaders(true),
+          body: JSON.stringify({ request: toSign }),
+        });
+        if (res.ok) {
+          const sig = (await res.text()).trim();
+          if (sig) return sig;
+        }
+      } catch {
+        // fallback local abaixo
+      }
+    }
+
+    // 2) Fallback local para não quebrar em ambientes sem edge function
+    return signWithWebCrypto(toSign, DEFAULT_QZ_PRIVATE_KEY);
   }
 
   /**
    * Initialize and connect to QZ Tray
    */
   public async connect(): Promise<void> {
-    if (this.isConnected) return;
+    if (qz.websocket.isActive()) {
+      this.isConnected = true;
+      return;
+    }
     if (this.connectingPromise) return this.connectingPromise;
 
     this.connectingPromise = (async () => {
@@ -87,15 +137,23 @@ class QZService {
         await this.configureSecurity();
         
         if (!qz.websocket.isActive()) {
-          await qz.websocket.connect();
+          // Permite pequenas retentativas enquanto o usuário interage com o popup do QZ Tray
+          await qz.websocket.connect({ retries: 2, delay: 1 });
         }
         this.isConnected = true;
         console.log("QZ Tray connected");
       } catch (err) {
         this.isConnected = false;
-        this.connectingPromise = null;
-        console.warn("QZ Tray not found or not running", err);
+        console.warn("QZ Tray not found or waiting authorization", err);
+        const errorText = String((err as any)?.message || err || "").toLowerCase();
+        if (errorText.includes("blocked") || errorText.includes("untrusted") || errorText.includes("rejected")) {
+          throw new Error(
+            "O QZ Tray bloqueou este site como nao confiavel. Abra QZ Tray > Advanced > Site Manager, remova o dominio de Blocked e deixe em Allowed com 'Remember this decision'.",
+          );
+        }
         throw err;
+      } finally {
+        this.connectingPromise = null;
       }
     })();
 
@@ -250,15 +308,45 @@ class QZService {
       throw err;
     }
   }
+  public isActive(): boolean {
+    return qz.websocket.isActive();
+  }
+
+  /**
+   * Get the system default printer
+   */
+  public async getDefaultPrinter(): Promise<string | null> {
+    await this.connect();
+    try {
+      const def = await qz.printers.getDefault();
+      return def || null;
+    } catch (err) {
+      console.warn("Could not get default printer:", err);
+      return null;
+    }
+  }
+
   /**
    * List all available printers
    */
   public async listPrinters(): Promise<string[]> {
     await this.connect();
     try {
-      return await qz.printers.find();
+      const found = await qz.printers.find();
+      const list = Array.isArray(found) ? found : (found ? [found] : []);
+      if (list.length > 0) {
+        return list;
+      }
+      // Se find() retornou vazio, tenta obter a padrão
+      const def = await this.getDefaultPrinter();
+      if (def) return [def];
+      return [];
     } catch (err) {
-      console.error("Error listing printers:", err);
+      console.warn("Error in qz.printers.find(), attempting getDefault:", err);
+      try {
+        const def = await this.getDefaultPrinter();
+        if (def) return [def];
+      } catch {}
       return [];
     }
   }

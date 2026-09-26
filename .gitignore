@@ -32,3 +32,6 @@ dist-ssr
 *.backup
 scratch_backup_inspect/
 
+
+.vercel
+.env*

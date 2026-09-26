@@ -101,6 +101,17 @@ const PrinterSettings = () => {
     setIsPrintOnAcceptEnabled(bt.printOnAccept !== false);
     checkConnection();
     loadStoredSettings();
+
+    // Auto-reconecta e recarrega impressoras quando a janela do navegador volta a ter foco (ex: usuário clicou 'Allow' no popup do QZ Tray)
+    const handleFocus = () => {
+      if (!qzService.isActive()) {
+        checkConnection();
+      } else {
+        loadPrinters();
+      }
+    };
+    window.addEventListener("focus", handleFocus);
+    return () => window.removeEventListener("focus", handleFocus);
   }, [user]);
 
   const loadStoredSettings = async () => {
@@ -150,7 +161,23 @@ const PrinterSettings = () => {
     try {
       const list = await qzService.listPrinters();
       setPrinters(list);
+
+      // Auto-seleciona a impressora se não houver nenhuma selecionada ainda
+      setSelectedPrinter((current) => {
+        if (current && list.includes(current)) return current;
+        const saved = localStorage.getItem("qz-selected-printer");
+        if (saved && list.includes(saved)) return saved;
+        // Prioriza impressoras EPSON / TM / Thermal / Receipt
+        const preferred = list.find((p) => /epson|tm-|receipt|thermal/i.test(p));
+        const chosen = preferred || list[0] || current;
+        if (chosen) {
+          localStorage.setItem("qz-selected-printer", chosen);
+          return chosen;
+        }
+        return "";
+      });
     } catch (err) {
+      console.warn("Erro ao listar impressoras:", err);
       toast.error("Erro ao carregar impressoras");
     } finally {
       setIsLoading(false);
@@ -349,26 +376,123 @@ const PrinterSettings = () => {
       <div className="space-y-4">
         <div className="h-px bg-border/50 my-2" />
         {!isConnected ? (
-          <div className="p-4 rounded-xl bg-amber-500/5 border border-amber-500/20 space-y-3">
-            <p className="text-sm text-amber-700 dark:text-amber-400 leading-relaxed">
-              O software <strong>QZ Tray</strong> não foi detectado. Para usar a impressão térmica direta, instale e execute o QZ Tray em seu computador.
-            </p>
-            <div className="flex gap-2">
-              <Button 
-                variant="ghost" 
-                size="sm"
-                onClick={checkConnection}
-              >
-                Tentar Novamente
-              </Button>
+          <div className="rounded-2xl border border-amber-500/30 bg-amber-500/5 p-5 space-y-4">
+            <div className="flex flex-col md:flex-row gap-5 items-start">
+              <div className="flex-1 space-y-3">
+                <div className="inline-flex items-center gap-2 px-2.5 py-1 rounded-full bg-amber-500/15 text-amber-800 dark:text-amber-300 text-xs font-semibold">
+                  <span>Atenção: Permissão do QZ Tray</span>
+                </div>
+                <h4 className="text-base font-bold text-foreground">
+                  Apareceu a janela "Action Required" na sua tela?
+                </h4>
+                <p className="text-sm text-muted-foreground leading-relaxed">
+                  Para que o sistema possa imprimir sem confirmações em cada pedido, o software <strong>QZ Tray</strong> precisa de sua permissão na primeira conexão:
+                </p>
+
+                <div className="space-y-2 bg-background/80 p-3 rounded-xl border border-border/60 text-xs text-foreground">
+                  <div className="flex items-start gap-2">
+                    <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-blue-500/20 text-blue-700 font-bold">1</span>
+                    <span>
+                      Baixe o certificado de segurança clicando no botão abaixo e <strong>copie o arquivo</strong> para a pasta <code className="bg-muted px-1 rounded">C:\Program Files\QZ Tray\</code> (o Windows pedirá permissão de administrador).
+                    </span>
+                  </div>
+                  <div className="pl-7 pb-1">
+                    <a
+                      href="/qz-certificate.crt"
+                      download="override.crt"
+                      className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-blue-500/10 text-blue-700 hover:bg-blue-500/20 text-xs font-semibold transition-colors"
+                    >
+                      <Download className="w-3 h-3" />
+                      Baixar override.crt
+                    </a>
+                  </div>
+                  <div className="flex items-start gap-2">
+                    <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-amber-500/20 text-amber-800 font-bold">2</span>
+                    <span>Feche o QZ Tray (clique direito no ícone verde perto do relógio → <strong>Exit</strong>) e abra novamente.</span>
+                  </div>
+                  <div className="flex items-start gap-2">
+                    <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-amber-500/20 text-amber-800 font-bold">3</span>
+                    <span>Recarregue esta página (<strong>F5</strong>). O popup vai aparecer com fundo <strong>verde</strong> (confiável).</span>
+                  </div>
+                  <div className="flex items-start gap-2">
+                    <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-emerald-500/20 text-emerald-700 font-bold">4</span>
+                    <span>Marque <strong>"Remember this decision"</strong> e clique em <strong>"Allow"</strong>. Pronto, nunca mais aparecerá!</span>
+                  </div>
+                </div>
+
+                <div className="flex flex-wrap items-center gap-2 pt-1">
+                  <Button 
+                    variant="default" 
+                    size="sm"
+                    className="gap-2"
+                    onClick={checkConnection}
+                    disabled={isConnecting}
+                  >
+                    {isConnecting ? (
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                    ) : (
+                      <RefreshCw className="w-4 h-4" />
+                    )}
+                    {isConnecting ? "Conectando ao QZ Tray..." : "Tentar Conectar"}
+                  </Button>
+
+                  <Button 
+                    variant="outline" 
+                    size="sm"
+                    className="gap-1.5"
+                    onClick={() => navigate("/lojista/configuracoes/impressora-tutorial")}
+                  >
+                    <ExternalLink className="w-3.5 h-3.5" />
+                    Ver Passo a Passo Completo
+                  </Button>
+
+                  <Button 
+                    variant="ghost" 
+                    size="sm"
+                    asChild
+                  >
+                    <a href="https://github.com/qzind/tray/releases/download/v2.2.4/qz-tray-2.2.4.exe" target="_blank" rel="noreferrer">
+                      <Download className="w-3.5 h-3.5 mr-1" />
+                      Baixar Instalador QZ Tray
+                    </a>
+                  </Button>
+                </div>
+              </div>
+
+              <div className="shrink-0 flex flex-col items-center gap-2 w-full md:w-auto">
+                <div className="rounded-xl overflow-hidden border border-border/80 shadow-md bg-white max-w-[270px]">
+                  <img 
+                    src="/printer-tutorial/qz-tray-allow-popup.png" 
+                    alt="Exemplo da janela Action Required do QZ Tray com botão Allow e Remember this decision"
+                    className="w-full h-auto object-contain"
+                  />
+                </div>
+                <span className="text-[11px] text-muted-foreground text-center">
+                  Janela que aparece no Windows
+                </span>
+              </div>
             </div>
           </div>
         ) : (
           <>
             <div className="space-y-2">
-              <Label className="text-xs">Selecione a Impressora</Label>
+              <div className="flex items-center justify-between">
+                <Label className="text-xs font-semibold">Selecione a Impressora</Label>
+                {selectedPrinter && (
+                  <span className="text-[11px] text-emerald-600 font-medium flex items-center gap-1">
+                    <CheckCircle2 className="w-3 h-3" />
+                    Selecionada: <strong>{selectedPrinter}</strong>
+                  </span>
+                )}
+              </div>
               <div className="flex gap-2">
-                <Select value={selectedPrinter} onValueChange={setSelectedPrinter}>
+                <Select 
+                  value={selectedPrinter || undefined} 
+                  onValueChange={(val) => {
+                    setSelectedPrinter(val);
+                    localStorage.setItem("qz-selected-printer", val);
+                  }}
+                >
                   <SelectTrigger className="w-full">
                     <SelectValue placeholder="Selecione uma impressora..." />
                   </SelectTrigger>
@@ -378,6 +502,16 @@ const PrinterSettings = () => {
                         {printer}
                       </SelectItem>
                     ))}
+                    {selectedPrinter && !printers.includes(selectedPrinter) && (
+                      <SelectItem value={selectedPrinter}>
+                        {selectedPrinter}
+                      </SelectItem>
+                    )}
+                    {printers.length === 0 && !selectedPrinter && (
+                      <SelectItem value="EPSON TM-T20 Receipt">
+                        EPSON TM-T20 Receipt (Padrão Windows)
+                      </SelectItem>
+                    )}
                   </SelectContent>
                 </Select>
                 <Button 
@@ -385,11 +519,32 @@ const PrinterSettings = () => {
                   size="icon" 
                   onClick={loadPrinters}
                   disabled={isLoading}
-                  title="Atualizar lista"
+                  title="Atualizar lista de impressoras"
                 >
                   <RefreshCw className={`w-4 h-4 ${isLoading ? 'animate-spin' : ''}`} />
                 </Button>
               </div>
+
+              {/* Botão de atalho rápido caso não apareça ou queira selecionar a Epson direto */}
+              {(!selectedPrinter || printers.length === 0) && (
+                <div className="flex flex-wrap items-center gap-2 pt-1">
+                  <span className="text-xs text-muted-foreground">Detectada no Windows:</span>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="h-7 text-xs gap-1.5 border-primary/40 text-primary hover:bg-primary/10"
+                    onClick={() => {
+                      setSelectedPrinter("EPSON TM-T20 Receipt");
+                      localStorage.setItem("qz-selected-printer", "EPSON TM-T20 Receipt");
+                      toast.success("EPSON TM-T20 Receipt selecionada!");
+                    }}
+                  >
+                    <Printer className="w-3.5 h-3.5" />
+                    Usar "EPSON TM-T20 Receipt"
+                  </Button>
+                </div>
+              )}
             </div>
 
             {isAutoPrintEnabled && canAutoPrint && (

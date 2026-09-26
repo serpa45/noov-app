@@ -5,6 +5,8 @@ import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { AuthProvider } from "@/contexts/AuthContext";
 import ProtectedRoute from "@/components/ProtectedRoute";
+import Maintenance from "./pages/Maintenance.tsx";
+import MaintenanceGate from "./components/MaintenanceGate.tsx";
 import Index from "./pages/Index.tsx";
 import NotFound from "./pages/NotFound.tsx";
 import Login from "./pages/Login.tsx";
@@ -149,8 +151,10 @@ const App = () => {
           <Toaster />
           <Sonner />
           <AppDownloadPopup />
-          <Routes>
-            <Route path="/" element={<Index />} />
+          <MaintenanceGate>
+            <Routes>
+              <Route path="/manutencao" element={<Maintenance />} />
+              <Route path="/" element={<Index />} />
             <Route path="/login" element={<Login />} />
             <Route path="/cadastro" element={<RegisterStore />} />
             <Route path="/reset-password" element={<ResetPassword />} />
@@ -317,6 +321,7 @@ const App = () => {
             <Route path="/:slug" element={<StoreMenu />} />
             <Route path="*" element={<NotFound />} />
           </Routes>
+        </MaintenanceGate>
           </PdvUserProvider>
         </AuthProvider>
       </BrowserRouter>
