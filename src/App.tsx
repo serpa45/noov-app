@@ -5,7 +5,6 @@ import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { AuthProvider } from "@/contexts/AuthContext";
 import ProtectedRoute from "@/components/ProtectedRoute";
-import Maintenance from "./pages/Maintenance.tsx";
 import MaintenanceGate from "./components/MaintenanceGate.tsx";
 import Index from "./pages/Index.tsx";
 import NotFound from "./pages/NotFound.tsx";
@@ -153,7 +152,7 @@ const App = () => {
           <AppDownloadPopup />
           <MaintenanceGate>
             <Routes>
-              <Route path="/manutencao" element={<Maintenance />} />
+              <Route path="/manutencao" element={<Navigate to="/" replace />} />
               <Route path="/" element={<Index />} />
             <Route path="/login" element={<Login />} />
             <Route path="/cadastro" element={<RegisterStore />} />
