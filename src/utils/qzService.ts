@@ -15,6 +15,9 @@ class QZService {
   private isConnected: boolean = false;
   private connectingPromise: Promise<void> | null = null;
   private isSecurityConfigured: boolean = false;
+  private lastConnectErrorAt = 0;
+  private lastConnectErrorMessage: string | null = null;
+  private readonly retryCooldownMs = 15000;
   private readonly signatureEndpoint = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/qz-tray-signature`;
   private readonly anonKey = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
 
@@ -128,8 +131,22 @@ class QZService {
   public async connect(): Promise<void> {
     if (qz.websocket.isActive()) {
       this.isConnected = true;
+      this.lastConnectErrorAt = 0;
+      this.lastConnectErrorMessage = null;
       return;
     }
+
+    const now = Date.now();
+    if (
+      this.lastConnectErrorAt > 0 &&
+      now - this.lastConnectErrorAt < this.retryCooldownMs
+    ) {
+      throw new Error(
+        this.lastConnectErrorMessage ||
+          "Aguardando autorizacao do QZ Tray. Marque 'Remember this decision' e clique em Allow.",
+      );
+    }
+
     if (this.connectingPromise) return this.connectingPromise;
 
     this.connectingPromise = (async () => {
@@ -138,19 +155,26 @@ class QZService {
         
         if (!qz.websocket.isActive()) {
           // Permite pequenas retentativas enquanto o usuário interage com o popup do QZ Tray
-          await qz.websocket.connect({ retries: 2, delay: 1 });
+          await qz.websocket.connect({ retries: 0, delay: 1 });
         }
         this.isConnected = true;
+        this.lastConnectErrorAt = 0;
+        this.lastConnectErrorMessage = null;
         console.log("QZ Tray connected");
       } catch (err) {
         this.isConnected = false;
         console.warn("QZ Tray not found or waiting authorization", err);
         const errorText = String((err as any)?.message || err || "").toLowerCase();
+        this.lastConnectErrorAt = Date.now();
         if (errorText.includes("blocked") || errorText.includes("untrusted") || errorText.includes("rejected")) {
+          this.lastConnectErrorMessage =
+            "O QZ Tray bloqueou este site como nao confiavel. Abra QZ Tray > Advanced > Site Manager, remova o dominio de Blocked e deixe em Allowed com 'Remember this decision'.";
           throw new Error(
             "O QZ Tray bloqueou este site como nao confiavel. Abra QZ Tray > Advanced > Site Manager, remova o dominio de Blocked e deixe em Allowed com 'Remember this decision'.",
           );
         }
+        this.lastConnectErrorMessage =
+          "Aguardando autorizacao do QZ Tray. Marque 'Remember this decision' e clique em Allow.";
         throw err;
       } finally {
         this.connectingPromise = null;
