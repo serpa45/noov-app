@@ -119,7 +119,7 @@ serve(async (req) => {
         binaryKey,
         {
           name: 'RSASSA-PKCS1-v1_5',
-          hash: 'SHA-256',
+          hash: 'SHA-512',
         },
         false,
         ['sign']

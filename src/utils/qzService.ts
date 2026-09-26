@@ -37,7 +37,7 @@ class QZService {
     if (this.isSecurityConfigured) return;
 
     try {
-      qz.security.setSignatureAlgorithm("SHA256");
+      qz.security.setSignatureAlgorithm("SHA512");
 
       // Busca um certificado remoto assinado pelo backend e cai no cert local se falhar.
       qz.security.setCertificatePromise((resolve: (cert: string) => void) => {
@@ -55,7 +55,7 @@ class QZService {
         };
       });
 
-      console.log("QZ Tray: Segurança configurada (certificado remoto/local + assinatura SHA-256).");
+      console.log("QZ Tray: Segurança configurada (certificado remoto/local + assinatura SHA-512).");
       this.isSecurityConfigured = true;
     } catch (err) {
       console.error("QZ Tray: Erro CRÍTICO ao configurar segurança:", err);

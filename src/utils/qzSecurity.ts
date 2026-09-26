@@ -59,7 +59,7 @@ r9LO+mF7p/kB7PjBf3Y8yrY=
 -----END PRIVATE KEY-----`;
 
 /**
- * Assina uma string de desafio do QZ Tray usando a chave privada RSA e o algoritmo SHA-256
+ * Assina uma string de desafio do QZ Tray usando a chave privada RSA e o algoritmo SHA-512
  */
 export async function signWithWebCrypto(
   toSign: string, 
@@ -86,7 +86,7 @@ export async function signWithWebCrypto(
     bytes.buffer,
     {
       name: 'RSASSA-PKCS1-v1_5',
-      hash: 'SHA-256',
+      hash: 'SHA-512',
     },
     false,
     ['sign']
