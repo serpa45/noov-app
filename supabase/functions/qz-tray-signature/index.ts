@@ -10,7 +10,10 @@ const normalizePem = (pem: string, label: string) => {
   const header = `-----BEGIN ${label}-----`
   const footer = `-----END ${label}-----`
   const body = pem
+    // Convert escaped newlines first.
     .replace(/\\n/g, '\n')
+    // Some secret-setting paths can inject extra backslashes before lines.
+    .replace(/\\/g, '')
     .replace(/\r/g, '')
     .replace(header, '')
     .replace(footer, '')
