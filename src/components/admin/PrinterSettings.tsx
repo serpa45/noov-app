@@ -451,7 +451,7 @@ const PrinterSettings = () => {
                     size="sm"
                     asChild
                   >
-                    <a href="https://github.com/qzind/tray/releases/download/v2.2.4/qz-tray-2.2.4.exe" target="_blank" rel="noreferrer">
+                    <a href="https://github.com/qzind/tray/releases/download/v2.3.0/qz-tray-2.3.0-x86_64.exe" target="_blank" rel="noreferrer">
                       <Download className="w-3.5 h-3.5 mr-1" />
                       Baixar Instalador QZ Tray
                     </a>

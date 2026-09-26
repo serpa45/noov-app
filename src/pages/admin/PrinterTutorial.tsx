@@ -89,10 +89,10 @@ const PrinterTutorial = () => {
 
   const downloadQZTray = () => {
     try {
-      const officialUrl = "https://github.com/qzind/tray/releases/download/v2.2.4/qz-tray-2.2.4.exe";
+      const officialUrl = "https://github.com/qzind/tray/releases/download/v2.3.0/qz-tray-2.3.0-x86_64.exe";
       const a = document.createElement("a");
       a.href = officialUrl;
-      a.download = "qz-tray-2.2.4.exe";
+      a.download = "qz-tray-2.3.0-x86_64.exe";
       a.target = "_blank";
       a.rel = "noopener noreferrer";
       document.body.appendChild(a);
@@ -100,7 +100,7 @@ const PrinterTutorial = () => {
       document.body.removeChild(a);
       toast.success("Iniciando download do instalador oficial do QZ Tray!");
     } catch (err) {
-      window.open("https://github.com/qzind/tray/releases/download/v2.2.4/qz-tray-2.2.4.exe", "_blank");
+      window.open("https://qz.io/download", "_blank");
     }
   };
 
