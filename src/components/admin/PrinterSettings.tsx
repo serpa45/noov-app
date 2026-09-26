@@ -99,19 +99,7 @@ const PrinterSettings = () => {
     // Lê printOnAccept das configs Bluetooth (flag compartilhada)
     const bt = getBluetoothSettings();
     setIsPrintOnAcceptEnabled(bt.printOnAccept !== false);
-    checkConnection();
     loadStoredSettings();
-
-    // Auto-reconecta e recarrega impressoras quando a janela do navegador volta a ter foco (ex: usuário clicou 'Allow' no popup do QZ Tray)
-    const handleFocus = () => {
-      if (!qzService.isActive()) {
-        checkConnection();
-      } else {
-        loadPrinters();
-      }
-    };
-    window.addEventListener("focus", handleFocus);
-    return () => window.removeEventListener("focus", handleFocus);
   }, [user]);
 
   const loadStoredSettings = async () => {
