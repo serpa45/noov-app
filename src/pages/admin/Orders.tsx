@@ -631,8 +631,6 @@ const Orders = () => {
       } catch {}
       if (isMobileOrTabletDevice()) {
         await printOrder(order);
-      } else if ((loja as any)?.impressao_automatica_qz) {
-        await printThermal(order);
       } else if ((loja as any)?.impressao_automatica) {
         await printOrder(order);
       }
@@ -682,7 +680,6 @@ const Orders = () => {
           "@/utils/bluetoothPrint"
         );
         const bt = getBluetoothSettings();
-        const qzAuto = !!(loja as any)?.impressao_automatica_qz;
         const lojaAuto = !!(loja as any)?.impressao_automatica;
 
         // Mobile/Tablet: Bluetooth Mini Print
@@ -712,21 +709,6 @@ const Orders = () => {
             }
             return;
           }
-          // BT pareado mas indisponível → tenta QZ Tray como fallback
-          try {
-            await qzService.connect();
-            for (const order of enteredPending) {
-              try { await printThermal(order); } catch (e) { console.error(e); }
-            }
-            return;
-          } catch { /* QZ indisponível também, segue fluxo */ }
-        }
-
-        if (qzAuto) {
-          for (const order of enteredPending) {
-            try { await printThermal(order); } catch (e) { console.error(e); }
-          }
-          return;
         }
 
         if (lojaAuto) {

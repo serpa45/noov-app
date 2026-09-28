@@ -88,8 +88,7 @@ const PrintAgentCard = () => {
       </div>
 
       <p className="text-[11px] text-muted-foreground leading-relaxed">
-        Depois que o teste sair no papel, desligue a impressão automática via QZ Tray abaixo para o
-        navegador não tentar imprimir em paralelo.
+        O QZ Tray não é mais necessário. A impressão automática passa a ser feita por este programa.
       </p>
     </div>
   );

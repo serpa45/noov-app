@@ -332,40 +332,11 @@ const PrinterSettings = () => {
 
       <PrintAgentCard />
 
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          <Printer className="w-5 h-5 text-primary" />
-          <h3 className="text-base font-bold font-display text-foreground">Impressora Térmica (QZ Tray)</h3>
-        </div>
-        <div className="flex items-center gap-3">
-          
-            <Button 
-              variant="outline" 
-              size="sm" 
-              className="h-8 gap-2 text-xs"
-              onClick={() => navigate("/lojista/configuracoes/impressora-tutorial")}
-            >
-              <Download className="w-3.5 h-3.5" />
-              Downloads Necessários
-            </Button>
-
-          <div className="flex items-center gap-1.5 border-l pl-3">
-            {isConnecting ? (
-              <Loader2 className="w-3 h-3 animate-spin text-muted-foreground" />
-            ) : isConnected ? (
-              <CheckCircle2 className="w-3 h-3 text-emerald-500" />
-            ) : (
-              <div className="w-2 h-2 rounded-full bg-red-500" />
-            )}
-            <span className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
-              {isConnecting ? "Conectando..." : isConnected ? "QZ Tray Ativo" : "QZ Tray Offline"}
-            </span>
-          </div>
-        </div>
-      </div>
-
-      <div className="space-y-4">
-        <div className="h-px bg-border/50 my-2" />
+      <details className="rounded-2xl border border-border/60 bg-muted/20">
+        <summary className="cursor-pointer list-none px-4 py-3 text-sm text-muted-foreground hover:text-foreground">
+          Método antigo (QZ Tray) — não use, está desativado
+        </summary>
+      <div className="px-4 pb-4 space-y-4">
         {!isConnected ? (
           <div className="rounded-2xl border border-amber-500/30 bg-amber-500/5 p-5 space-y-4">
             <div className="flex flex-col md:flex-row gap-5 items-start">
@@ -757,6 +728,7 @@ const PrinterSettings = () => {
           </>
         )}
       </div>
+      </details>
         </TabsContent>
         <TabsContent value="bluetooth" className="mt-0">
           <BluetoothPrinterSettings />
