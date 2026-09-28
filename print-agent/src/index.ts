@@ -1,35 +1,59 @@
-import { loadConfig } from "./config.js";
+import { spawn } from "node:child_process";
+import { tryLoadConfig } from "./config.js";
 import { configureLogger, log } from "./logger.js";
+import { applyConfig, status } from "./runtime.js";
+import { startSetupServer } from "./server/http.js";
 import { initState } from "./state.js";
-import { connect } from "./supabase.js";
-import { startWatching } from "./watcher.js";
+import { AGENT_VERSION, applyPendingUpdate, startUpdateChecks } from "./updater.js";
 
-const RECONNECT_DELAY_MS = 15000;
+const SETUP_URL = "http://localhost:7777";
 
-async function main(): Promise<void> {
-  const config = loadConfig();
-  configureLogger(config.logLevel);
-  initState();
-
-  log.info("NOOV Print Agent iniciando...");
-  for (const printer of config.printers) {
-    log.info(
-      `Impressora "${printer.name}": ${printer.transport} -> ${printer.address}` +
-        ` | ${printer.documents.join(", ")} | ${printer.copies}x | ${printer.paperWidth}mm` +
-        (printer.enabled ? "" : " (desativada)"),
-    );
+function openBrowser(url: string): void {
+  try {
+    if (process.platform === "win32") spawn("cmd.exe", ["/c", "start", "", url], { detached: true, stdio: "ignore" }).unref();
+    else if (process.platform === "darwin") spawn("open", [url], { detached: true, stdio: "ignore" }).unref();
+    else spawn("xdg-open", [url], { detached: true, stdio: "ignore" }).unref();
+  } catch {
+    // Sem navegador disponivel o lojista ainda pode abrir a URL na mao.
   }
-
-  const session = await connect(config);
-  await startWatching(session, config);
 }
 
-function start(): void {
-  main().catch((err) => {
-    log.error("Falha ao iniciar o agente:", err);
-    log.info(`Nova tentativa em ${RECONNECT_DELAY_MS / 1000}s.`);
-    setTimeout(start, RECONNECT_DELAY_MS);
-  });
+async function main(): Promise<void> {
+  if (applyPendingUpdate()) {
+    process.exit(0);
+  }
+
+  const background = process.argv.includes("--background");
+  const stored = tryLoadConfig();
+
+  configureLogger(stored?.logLevel ?? "info");
+  initState();
+  log.info(`NOOV Print Agent ${AGENT_VERSION} iniciando...`);
+
+  try {
+    await startSetupServer();
+  } catch (err: any) {
+    if (err?.code === "EADDRINUSE") {
+      // Ja existe um agente rodando: o segundo clique so abre a tela dele.
+      log.info("O agente ja esta em execucao. Abrindo a tela de configuracao.");
+      openBrowser(SETUP_URL);
+      process.exit(0);
+    }
+    throw err;
+  }
+  log.info(`Tela de configuracao disponivel em ${SETUP_URL}`);
+
+  if (stored) {
+    await applyConfig(stored).catch(() => {
+      // applyConfig ja registrou o erro e vai tentar de novo sozinho.
+    });
+  } else {
+    log.info("Nenhuma configuracao encontrada. Abrindo a tela de configuracao.");
+  }
+
+  if (!background && (!stored || !status().connected)) openBrowser(SETUP_URL);
+
+  startUpdateChecks();
 }
 
 process.on("unhandledRejection", (err) => log.error("Erro nao tratado:", err));
@@ -39,4 +63,7 @@ process.on("SIGINT", () => {
   process.exit(0);
 });
 
-start();
+main().catch((err) => {
+  log.error("Falha ao iniciar o agente:", err);
+  process.exitCode = 1;
+});

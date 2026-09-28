@@ -8,11 +8,10 @@
   "scripts": {
     "dev": "node --import tsx src/index.ts",
     "build": "node esbuild.config.mjs",
+    "package": "node esbuild.config.mjs && pkg dist/agent.cjs --targets node22-win-x64 --output release/noov-print-agent.exe",
     "start": "node dist/agent.cjs",
     "printers": "node --import tsx src/cli/listPrinters.ts",
     "test-print": "node --import tsx src/cli/testPrint.ts",
-    "service:install": "node scripts/install-service.mjs",
-    "service:uninstall": "node scripts/uninstall-service.mjs",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
@@ -23,8 +22,8 @@
   },
   "devDependencies": {
     "@types/node": "^22.16.5",
+    "@yao-pkg/pkg": "^6.3.0",
     "esbuild": "^0.25.0",
-    "node-windows": "^1.0.0-beta.8",
     "tsx": "^4.19.2",
     "typescript": "^5.8.3"
   },

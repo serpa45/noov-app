@@ -43,7 +43,9 @@ async function resolveMesaNome(session: Session, mesaId: string | null): Promise
   return (data as any)?.nome || undefined;
 }
 
-export async function startWatching(session: Session, config: AgentConfig): Promise<void> {
+export type StopWatching = () => Promise<void>;
+
+export async function startWatching(session: Session, config: AgentConfig): Promise<StopWatching> {
   if (!config.printBacklogOnStart) await seedBaseline(session, config);
 
   const handleOrder = async (row: OrderRow, source: string) => {
@@ -51,7 +53,7 @@ export async function startWatching(session: Session, config: AgentConfig): Prom
     await printOrder(row, session.loja, config, { source });
   };
 
-  session.client
+  const pedidosChannel = session.client
     .channel("noov-print-pedidos")
     .on(
       "postgres_changes",
@@ -64,8 +66,9 @@ export async function startWatching(session: Session, config: AgentConfig): Prom
     )
     .subscribe((status) => log.info(`Canal de pedidos: ${status}`));
 
+  let pdvChannel: ReturnType<typeof session.client.channel> | null = null;
   if (config.printPdvKitchen) {
-    session.client
+    pdvChannel = session.client
       .channel("noov-print-pdv")
       .on(
         "postgres_changes",
@@ -91,7 +94,7 @@ export async function startWatching(session: Session, config: AgentConfig): Prom
   }
 
   // Varredura periodica: rede de seguranca caso o websocket caia sem avisar.
-  setInterval(() => {
+  const sweep = setInterval(() => {
     void (async () => {
       const { data, error } = await session.client
         .from("pedidos")
@@ -108,4 +111,11 @@ export async function startWatching(session: Session, config: AgentConfig): Prom
   }, config.pollIntervalMs);
 
   log.info("Agente pronto. Aguardando pedidos aceitos...");
+
+  return async () => {
+    clearInterval(sweep);
+    await session.client.removeChannel(pedidosChannel);
+    if (pdvChannel) await session.client.removeChannel(pdvChannel);
+    log.info("Escuta de pedidos interrompida.");
+  };
 }

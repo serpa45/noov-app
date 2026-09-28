@@ -1,0 +1,352 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>NOOV — Impressão automática</title>
+<style>
+  :root {
+    --bg: hsl(220 20% 97%);
+    --fg: hsl(220 30% 10%);
+    --muted: hsl(220 10% 45%);
+    --line: hsl(220 15% 88%);
+    --card: #fff;
+    --primary: hsl(220 90% 50%);
+    --ok: hsl(150 65% 35%);
+    --bad: hsl(0 72% 48%);
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--fg);
+    font: 15px/1.5 "Segoe UI", system-ui, -apple-system, sans-serif;
+  }
+  .topbar {
+    background: var(--fg); color: #fff; padding: 18px 24px;
+    display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
+  }
+  .topbar h1 { font-size: 17px; margin: 0; font-weight: 650; }
+  .topbar .version { color: hsl(220 15% 65%); font-size: 13px; }
+  .pill {
+    margin-left: auto; font-size: 13px; font-weight: 600;
+    padding: 5px 12px; border-radius: 999px; background: hsl(220 20% 25%); color: #fff;
+  }
+  .pill.ok { background: var(--ok); }
+  .pill.bad { background: var(--bad); }
+  main { max-width: 880px; margin: 0 auto; padding: 24px 24px 64px; }
+  section {
+    background: var(--card); border: 1px solid var(--line); border-radius: 12px;
+    padding: 20px 22px; margin-bottom: 18px;
+  }
+  section h2 { font-size: 15px; margin: 0 0 4px; }
+  section p.hint { margin: 0 0 16px; color: var(--muted); font-size: 13.5px; }
+  label { display: block; font-size: 13px; font-weight: 600; margin-bottom: 5px; }
+  input, select {
+    width: 100%; padding: 9px 11px; border: 1px solid var(--line);
+    border-radius: 8px; font: inherit; background: #fff; color: inherit;
+  }
+  input:focus, select:focus { outline: 2px solid var(--primary); outline-offset: -1px; }
+  .row { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-bottom: 14px; }
+  .row.three { grid-template-columns: 1fr 1fr 1fr; }
+  .row > div { min-width: 0; }
+  button {
+    font: inherit; font-weight: 600; padding: 9px 16px; border-radius: 8px;
+    border: 1px solid var(--line); background: #fff; color: inherit; cursor: pointer;
+  }
+  button:hover { border-color: var(--muted); }
+  button.primary { background: var(--primary); border-color: var(--primary); color: #fff; }
+  button.primary:hover { filter: brightness(0.94); }
+  button:disabled { opacity: 0.55; cursor: default; }
+  .printer { border: 1px solid var(--line); border-radius: 10px; padding: 16px; margin-bottom: 14px; }
+  .printer .head { display: flex; align-items: center; gap: 10px; padding-bottom: 12px; }
+  .printer .head strong { font-size: 14.5px; }
+  .printer .head .spacer { margin-left: auto; }
+  .check { display: flex; align-items: center; gap: 8px; font-size: 13.5px; font-weight: 500; margin: 0; }
+  .check input { width: auto; }
+  .actions { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+  .msg { font-size: 13.5px; padding: 10px 12px; border-radius: 8px; margin-top: 12px; display: none; }
+  .msg.show { display: block; }
+  .msg.ok { background: hsl(150 60% 95%); color: hsl(150 70% 22%); }
+  .msg.bad { background: hsl(0 80% 96%); color: hsl(0 65% 35%); }
+  pre#logs {
+    margin: 0; max-height: 260px; overflow: auto; font-size: 12px; line-height: 1.55;
+    background: hsl(220 25% 12%); color: hsl(220 15% 82%); padding: 14px; border-radius: 8px;
+    white-space: pre-wrap; word-break: break-word;
+  }
+  .footnote { color: var(--muted); font-size: 12.5px; margin-top: 10px; }
+</style>
+</head>
+<body>
+<div class="topbar">
+  <h1>NOOV · Impressão automática</h1>
+  <span class="version" id="version"></span>
+  <span class="pill" id="statusPill">carregando…</span>
+</div>
+
+<main>
+  <section>
+    <h2>1. Conta da loja</h2>
+    <p class="hint">Use o mesmo e-mail e senha que você usa para entrar no painel do NOOV.</p>
+    <div class="row">
+      <div><label for="email">E-mail</label><input id="email" type="email" autocomplete="username" /></div>
+      <div><label for="password">Senha</label><input id="password" type="password" autocomplete="current-password" /></div>
+    </div>
+    <div class="actions">
+      <button id="btnLogin">Verificar acesso</button>
+    </div>
+    <div class="msg" id="loginMsg"></div>
+  </section>
+
+  <section>
+    <h2>2. Impressoras</h2>
+    <p class="hint">O balcão recebe o cupom completo do cliente e a cozinha recebe a comanda enxuta. Você pode apontar as duas para a mesma impressora, ou desligar a que não tiver.</p>
+    <div id="printers"></div>
+    <div class="actions">
+      <button id="btnRefresh">Procurar impressoras de novo</button>
+    </div>
+  </section>
+
+  <section>
+    <h2>3. Comportamento</h2>
+    <div class="row three">
+      <div>
+        <label for="trigger">Imprimir quando o pedido ficar</label>
+        <select id="trigger">
+          <option value="aceito">Aceito</option>
+          <option value="pendente">Pendente (assim que entra)</option>
+          <option value="preparando">Em preparo</option>
+        </select>
+      </div>
+      <div>
+        <label>&nbsp;</label>
+        <label class="check"><input type="checkbox" id="pdv" checked /> Imprimir comandas de mesa do PDV</label>
+      </div>
+      <div>
+        <label>&nbsp;</label>
+        <label class="check"><input type="checkbox" id="autostart" checked /> Iniciar junto com o Windows</label>
+      </div>
+    </div>
+    <div class="actions">
+      <button class="primary" id="btnSave">Salvar e ativar impressão automática</button>
+    </div>
+    <div class="msg" id="saveMsg"></div>
+    <p class="footnote">Depois de salvar, desative a impressão via QZ em Configurações → Impressora no painel, para o navegador não tentar imprimir em paralelo.</p>
+  </section>
+
+  <section>
+    <h2>Registro de atividade</h2>
+    <p class="hint">As últimas linhas do que o agente fez. É por aqui que se descobre por que algo não imprimiu.</p>
+    <pre id="logs">carregando…</pre>
+  </section>
+</main>
+
+<script>
+const $ = (id) => document.getElementById(id);
+let detected = { spooler: [], serial: [] };
+let printers = [];
+
+const DEFAULT_PRINTERS = [
+  { name: "Balcão", enabled: true, transport: "spooler", address: "", port: 9100, documents: ["receipt"], copies: 1, paperWidth: 58 },
+  { name: "Cozinha", enabled: false, transport: "spooler", address: "", port: 9100, documents: ["kitchen"], copies: 1, paperWidth: 80 },
+];
+
+function esc(value) {
+  return String(value == null ? "" : value).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+}
+
+function show(el, text, kind) {
+  el.textContent = text;
+  el.className = "msg show " + kind;
+}
+
+function addressField(p, index) {
+  if (p.transport === "network") {
+    return '<input data-field="address" data-index="' + index + '" value="' + esc(p.address) + '" placeholder="192.168.0.50" />';
+  }
+  const list = p.transport === "serial"
+    ? detected.serial.map((s) => ({ value: s.path, label: s.label }))
+    : detected.spooler.map((s) => ({ value: s, label: s }));
+  const known = list.some((o) => o.value === p.address);
+  const missing = p.address && !known
+    ? '<option value="' + esc(p.address) + '" selected>' + esc(p.address) + ' (não encontrada)</option>'
+    : "";
+  const options = list.map((o) =>
+    '<option value="' + esc(o.value) + '"' + (o.value === p.address ? " selected" : "") + ">" + esc(o.label) + "</option>"
+  ).join("");
+  return '<select data-field="address" data-index="' + index + '"><option value="">Selecione…</option>' + missing + options + "</select>";
+}
+
+function renderPrinters() {
+  $("printers").innerHTML = printers.map((p, i) => `
+    <div class="printer">
+      <div class="head">
+        <strong>${esc(p.name)}</strong>
+        <span class="spacer"></span>
+        <label class="check"><input type="checkbox" data-field="enabled" data-index="${i}" ${p.enabled ? "checked" : ""} /> Ativa</label>
+      </div>
+      <div class="row three">
+        <div>
+          <label>Como está ligada</label>
+          <select data-field="transport" data-index="${i}">
+            <option value="spooler" ${p.transport === "spooler" ? "selected" : ""}>USB / instalada no Windows</option>
+            <option value="network" ${p.transport === "network" ? "selected" : ""}>Rede (cabo ou Wi-Fi)</option>
+            <option value="serial" ${p.transport === "serial" ? "selected" : ""}>Porta COM / Bluetooth</option>
+          </select>
+        </div>
+        <div>
+          <label>${p.transport === "network" ? "Endereço IP" : "Impressora"}</label>
+          ${addressField(p, i)}
+        </div>
+        <div>
+          <label>Largura do papel</label>
+          <select data-field="paperWidth" data-index="${i}">
+            <option value="58" ${Number(p.paperWidth) === 58 ? "selected" : ""}>58 mm</option>
+            <option value="80" ${Number(p.paperWidth) === 80 ? "selected" : ""}>80 mm</option>
+          </select>
+        </div>
+      </div>
+      <div class="actions">
+        <button data-test="${i}">Imprimir teste</button>
+        <span class="footnote">Vias: <input type="number" min="1" max="5" value="${Number(p.copies) || 1}" data-field="copies" data-index="${i}" style="width:64px;display:inline-block" /></span>
+      </div>
+    </div>
+  `).join("");
+
+  $("printers").querySelectorAll("[data-field]").forEach((el) => {
+    el.addEventListener("change", () => {
+      const i = Number(el.dataset.index);
+      const field = el.dataset.field;
+      const value = el.type === "checkbox" ? el.checked : el.value;
+      printers[i][field] = (field === "copies" || field === "paperWidth") ? Number(value) : value;
+      if (field === "transport") {
+        printers[i].address = "";
+        renderPrinters();
+      }
+    });
+  });
+
+  $("printers").querySelectorAll("[data-test]").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      const i = Number(btn.dataset.test);
+      const original = btn.textContent;
+      btn.disabled = true;
+      btn.textContent = "Enviando…";
+      try {
+        const res = await post("/api/test", { printer: printers[i] });
+        btn.textContent = res.ok ? "Enviado ✓" : "Falhou";
+        if (!res.ok) show($("saveMsg"), res.error || "Falha ao imprimir o teste.", "bad");
+      } catch (err) {
+        btn.textContent = "Falhou";
+        show($("saveMsg"), String(err.message || err), "bad");
+      }
+      setTimeout(() => { btn.textContent = original; btn.disabled = false; }, 2500);
+    });
+  });
+}
+
+async function post(url, body) {
+  const res = await fetch(url, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  return res.json();
+}
+
+async function loadStatus() {
+  const s = await (await fetch("/api/status")).json();
+  $("version").textContent = "v" + s.version;
+  const pill = $("statusPill");
+  if (!s.configured) {
+    pill.textContent = "não configurado";
+    pill.className = "pill";
+  } else if (s.connected) {
+    pill.textContent = "imprimindo pedidos de " + (s.lojaNome || "sua loja");
+    pill.className = "pill ok";
+  } else {
+    pill.textContent = s.lastError ? "com problema" : "parado";
+    pill.className = "pill bad";
+  }
+  if (s.lastError) show($("saveMsg"), s.lastError, "bad");
+  return s;
+}
+
+async function loadLogs() {
+  try {
+    const { lines } = await (await fetch("/api/logs")).json();
+    const el = $("logs");
+    const atBottom = el.scrollTop + el.clientHeight >= el.scrollHeight - 20;
+    el.textContent = lines.length ? lines.join("\n") : "Nada registrado ainda.";
+    if (atBottom) el.scrollTop = el.scrollHeight;
+  } catch (err) {
+    // A tela continua util mesmo sem log.
+  }
+}
+
+async function loadPrinters() {
+  detected = await (await fetch("/api/printers")).json();
+  renderPrinters();
+}
+
+$("btnLogin").addEventListener("click", async () => {
+  const btn = $("btnLogin");
+  btn.disabled = true;
+  try {
+    const res = await post("/api/login", { email: $("email").value.trim(), password: $("password").value });
+    if (res.ok) show($("loginMsg"), "Acesso confirmado — loja " + res.lojaNome + ".", "ok");
+    else show($("loginMsg"), res.error || "Não foi possível entrar.", "bad");
+  } catch (err) {
+    show($("loginMsg"), String(err.message || err), "bad");
+  }
+  btn.disabled = false;
+});
+
+$("btnRefresh").addEventListener("click", loadPrinters);
+
+$("btnSave").addEventListener("click", async () => {
+  const btn = $("btnSave");
+  btn.disabled = true;
+  btn.textContent = "Salvando…";
+  try {
+    const res = await post("/api/save", {
+      email: $("email").value.trim(),
+      password: $("password").value,
+      triggerStatus: [$("trigger").value],
+      printPdvKitchen: $("pdv").checked,
+      autostart: $("autostart").checked,
+      printers: printers,
+    });
+    if (res.ok) show($("saveMsg"), "Pronto. A partir de agora os pedidos saem sozinhos.", "ok");
+    else show($("saveMsg"), res.error || "Não foi possível salvar.", "bad");
+  } catch (err) {
+    show($("saveMsg"), String(err.message || err), "bad");
+  }
+  btn.disabled = false;
+  btn.textContent = "Salvar e ativar impressão automática";
+  await loadStatus();
+});
+
+(async function init() {
+  const s = await loadStatus();
+  if (s.config) {
+    $("email").value = s.config.email || "";
+    if (s.hasPassword) $("password").placeholder = "deixe em branco para manter a senha atual";
+    $("trigger").value = (s.config.triggerStatus || ["aceito"])[0];
+    $("pdv").checked = s.config.printPdvKitchen !== false;
+    printers = (s.config.printers && s.config.printers.length) ? s.config.printers : DEFAULT_PRINTERS;
+  } else {
+    printers = DEFAULT_PRINTERS;
+  }
+  $("autostart").checked = s.autostart !== false;
+  if (!s.autostartSupported) {
+    $("autostart").checked = false;
+    $("autostart").disabled = true;
+  }
+  renderPrinters();
+  await loadPrinters();
+  await loadLogs();
+  setInterval(loadLogs, 4000);
+  setInterval(loadStatus, 8000);
+})();
+</script>
+</body>
+</html>

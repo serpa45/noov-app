@@ -1,5 +1,6 @@
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { basename, dirname, resolve } from "node:path";
+import { NOOV_SUPABASE_ANON_KEY, NOOV_SUPABASE_URL } from "./brand.js";
 
 export type TransportKind = "spooler" | "network" | "serial";
 export type DocumentKind = "receipt" | "kitchen";
@@ -54,15 +55,34 @@ const PRINTER_DEFAULTS: Omit<PrinterConfig, "name" | "transport" | "address"> = 
   textSize: "normal",
 };
 
+/** True quando rodando dentro do executavel unico distribuido ao lojista. */
+export function isPackaged(): boolean {
+  return Boolean((process as any).pkg);
+}
+
 /**
- * Diretorio base do agente. Como servico do Windows o cwd nao e confiavel,
- * entao a raiz e deduzida a partir do proprio arquivo em execucao.
+ * Diretorio onde ficam config, logs e estado.
+ *
+ * No executavel distribuido isso vive na pasta do usuario, para que trocar o
+ * .exe em uma atualizacao nao apague a configuracao da loja. Em desenvolvimento
+ * fica na propria pasta do projeto.
  */
 export function agentHome(): string {
   if (process.env.NOOV_AGENT_HOME) return resolve(process.env.NOOV_AGENT_HOME);
+
+  if (isPackaged()) {
+    const base =
+      process.platform === "win32"
+        ? process.env.APPDATA || process.env.USERPROFILE || process.cwd()
+        : process.env.HOME || process.cwd();
+    return resolve(base, "NOOV Print Agent");
+  }
+
   const entry = process.argv[1] ? resolve(process.argv[1]) : process.cwd();
   const dir = dirname(entry);
-  if (basename(dir) === "dist" || basename(dir) === "src") return dirname(dir);
+  if (basename(dir) === "dist" || basename(dir) === "src" || basename(dir) === "cli") {
+    return basename(dir) === "cli" ? dirname(dirname(dir)) : dirname(dir);
+  }
   return dir;
 }
 
@@ -111,23 +131,12 @@ function normalizePrinter(raw: any, index: number): PrinterConfig {
   };
 }
 
-export function loadConfig(): AgentConfig {
-  const path = configPath();
-  if (!existsSync(path)) {
-    throw new Error(
-      `Arquivo de configuracao nao encontrado em ${path}. Copie config.example.json para config.json e preencha os dados.`,
-    );
-  }
-
-  let raw: any;
-  try {
-    raw = JSON.parse(readFileSync(path, "utf8"));
-  } catch (err: any) {
-    fail(`nao foi possivel ler o JSON (${err?.message || err})`);
-  }
-
+export function parseConfig(raw: any): AgentConfig {
   const supabase = raw?.supabase ?? {};
-  for (const field of ["url", "anonKey", "email", "password"]) {
+  // url e anonKey ja vem embutidos no executavel; o lojista so informa o login.
+  const url = String(supabase.url || NOOV_SUPABASE_URL).trim();
+  const anonKey = String(supabase.anonKey || NOOV_SUPABASE_ANON_KEY).trim();
+  for (const field of ["email", "password"]) {
     if (!String(supabase?.[field] || "").trim()) fail(`supabase.${field} nao foi preenchido`);
   }
 
@@ -140,8 +149,8 @@ export function loadConfig(): AgentConfig {
 
   return {
     supabase: {
-      url: String(supabase.url).replace(/\/+$/, ""),
-      anonKey: String(supabase.anonKey),
+      url: url.replace(/\/+$/, ""),
+      anonKey,
       email: String(supabase.email),
       password: String(supabase.password),
     },
@@ -156,4 +165,45 @@ export function loadConfig(): AgentConfig {
     printers,
     logLevel: ["debug", "info", "warn", "error"].includes(raw?.logLevel) ? raw.logLevel : "info",
   };
+}
+
+export function configExists(): boolean {
+  return existsSync(configPath());
+}
+
+function readRawConfig(): any {
+  const path = configPath();
+  try {
+    return JSON.parse(readFileSync(path, "utf8"));
+  } catch (err: any) {
+    fail(`nao foi possivel ler o JSON de ${path} (${err?.message || err})`);
+  }
+}
+
+export function loadConfig(): AgentConfig {
+  if (!configExists()) {
+    throw new Error(
+      `Arquivo de configuracao nao encontrado em ${configPath()}. Abra o agente para configurar pela tela.`,
+    );
+  }
+  return parseConfig(readRawConfig());
+}
+
+/** Retorna null (em vez de lancar) quando a loja ainda nao configurou nada. */
+export function tryLoadConfig(): AgentConfig | null {
+  if (!configExists()) return null;
+  try {
+    return parseConfig(readRawConfig());
+  } catch {
+    return null;
+  }
+}
+
+/** Valida e grava. A senha nunca sai daqui: fica apenas no disco da loja. */
+export function saveConfig(raw: any): AgentConfig {
+  const parsed = parseConfig(raw);
+  const path = configPath();
+  mkdirSync(dirname(path), { recursive: true });
+  writeFileSync(path, `${JSON.stringify(raw, null, 2)}\n`, "utf8");
+  return parsed;
 }
