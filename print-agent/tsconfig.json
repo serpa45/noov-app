@@ -1,0 +1,21 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "lib": ["ES2022", "DOM"],
+    "strict": false,
+    "noEmit": true,
+    "skipLibCheck": true,
+    "esModuleInterop": true,
+    "allowSyntheticDefaultImports": true,
+    "resolveJsonModule": true,
+    "types": ["node"],
+    "baseUrl": ".",
+    "paths": {
+      "@/lib/utils": ["src/shims/app-utils.ts"],
+      "@/*": ["../src/*"]
+    }
+  },
+  "include": ["src/**/*.ts", "../src/utils/thermalPrint.ts"]
+}

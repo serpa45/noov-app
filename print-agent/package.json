@@ -1,0 +1,34 @@
+{
+  "name": "noov-print-agent",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Agente local de impressao automatica do NOOV (balcao + cozinha)",
+  "type": "module",
+  "main": "dist/agent.cjs",
+  "scripts": {
+    "dev": "node --import tsx src/index.ts",
+    "build": "node esbuild.config.mjs",
+    "start": "node dist/agent.cjs",
+    "printers": "node --import tsx src/cli/listPrinters.ts",
+    "test-print": "node --import tsx src/cli/testPrint.ts",
+    "service:install": "node scripts/install-service.mjs",
+    "service:uninstall": "node scripts/uninstall-service.mjs",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.100.1"
+  },
+  "optionalDependencies": {
+    "serialport": "^12.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.16.5",
+    "esbuild": "^0.25.0",
+    "node-windows": "^1.0.0-beta.8",
+    "tsx": "^4.19.2",
+    "typescript": "^5.8.3"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}
