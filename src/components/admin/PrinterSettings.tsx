@@ -30,6 +30,7 @@ import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import MarginEditor from "./MarginEditor";
 import BluetoothPrinterSettings from "./BluetoothPrinterSettings";
+import PrintAgentCard from "./PrintAgentCard";
 import { getBluetoothSettings, saveBluetoothSettings } from "@/utils/bluetoothPrint";
 import { Info } from "lucide-react";
 
@@ -328,6 +329,8 @@ const PrinterSettings = () => {
           <TabsTrigger value="bluetooth" className="rounded-none border-b-2 border-transparent bg-transparent px-0 pb-2 data-[state=active]:border-primary data-[state=active]:bg-transparent data-[state=active]:shadow-none data-[state=active]:text-foreground text-muted-foreground">Mini Print Bluetooth</TabsTrigger>
         </TabsList>
         <TabsContent value="pc" className="space-y-6 mt-0">
+
+      <PrintAgentCard />
 
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
