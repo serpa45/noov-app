@@ -4,12 +4,19 @@ import { parseConfig, saveConfig, tryLoadConfig } from "../config.js";
 import { autostartSupported, disableAutostart, enableAutostart, isAutostartEnabled } from "../autostart.js";
 import { buildDocument, type OrderRow } from "../documents.js";
 import { log, recentLogs } from "../logger.js";
-import { applyConfig, status } from "../runtime.js";
+import { applyConfig, currentConfig, currentSession, status } from "../runtime.js";
+import { printOrder } from "../printer.js";
 import { connect } from "../supabase.js";
 import { sendBytes } from "../transports/index.js";
 import { listSerialPorts, listSpoolerPrinters } from "../transports/index.js";
 import { AGENT_VERSION } from "../updater.js";
 import SETUP_HTML from "./ui.html";
+
+const CORS_HEADERS: Record<string, string> = {
+  "access-control-allow-origin": "*",
+  "access-control-allow-methods": "GET, POST, OPTIONS",
+  "access-control-allow-headers": "content-type",
+};
 
 const TEST_LOJA = {
   nome: "TESTE NOOV",
@@ -45,7 +52,11 @@ const TEST_ORDER: OrderRow = {
 
 function json(res: ServerResponse, status: number, body: unknown): void {
   const payload = JSON.stringify(body);
-  res.writeHead(status, { "content-type": "application/json; charset=utf-8", "cache-control": "no-store" });
+  res.writeHead(status, {
+    "content-type": "application/json; charset=utf-8",
+    "cache-control": "no-store",
+    ...CORS_HEADERS,
+  });
   res.end(payload);
 }
 
@@ -80,6 +91,12 @@ function configFromForm(form: any): any {
 async function handle(req: IncomingMessage, res: ServerResponse): Promise<void> {
   const url = new URL(req.url || "/", `http://localhost:${SETUP_PORT}`);
   const path = url.pathname;
+
+  if (req.method === "OPTIONS") {
+    res.writeHead(204, CORS_HEADERS);
+    res.end();
+    return;
+  }
 
   if (req.method === "GET" && (path === "/" || path === "/index.html")) {
     res.writeHead(200, { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" });
@@ -163,6 +180,39 @@ async function handle(req: IncomingMessage, res: ServerResponse): Promise<void> 
         else await enableAutostart();
       }
       await applyConfig(config);
+      json(res, 200, { ok: true });
+    } catch (err: any) {
+      json(res, 200, { ok: false, error: err?.message || String(err) });
+    }
+    return;
+  }
+
+  // O painel do NOOV chama este endpoint ao clicar em Imprimir no pedido.
+  // Assim a impressao vai pelo mesmo caminho do teste, sem QZ Tray.
+  if (req.method === "POST" && path === "/api/print-order") {
+    const body = await readBody(req);
+    try {
+      const config = currentConfig();
+      const session = currentSession();
+      if (!config || !session) {
+        json(res, 200, {
+          ok: false,
+          error: "Agente nao configurado ou desconectado. Abra o NOOV Print Agent e salve a configuracao.",
+        });
+        return;
+      }
+      const order = body?.order;
+      if (!order?.id) {
+        json(res, 200, { ok: false, error: "Pedido invalido." });
+        return;
+      }
+      const only = Array.isArray(body?.documents) ? body.documents : undefined;
+      await printOrder(order, session.loja, config, {
+        source: "painel",
+        force: true,
+        only,
+      });
+      log.info(`Pedido ${order.numero_diario ?? order.id} impresso a pedido do painel.`);
       json(res, 200, { ok: true });
     } catch (err: any) {
       json(res, 200, { ok: false, error: err?.message || String(err) });

@@ -1,5 +1,4 @@
 import { toast } from "sonner";
-import { qzService } from "./qzService";
 import { bluetoothPrintService, getBluetoothSettings } from "./bluetoothPrint";
 import { buildKitchenBytes, KitchenTicketData } from "./thermalPrint";
 
@@ -73,17 +72,8 @@ export const printReceipt = async (content: string) => {
     return;
   }
 
-  // 3) Desktop: tenta QZ Tray (impressora térmica configurada).
-  try {
-    const success = await qzService.printHTML(content);
-    if (success) {
-      toast.success("Impressão enviada", SUCCESS_STYLE);
-      return;
-    }
-  } catch (err) {
-    console.log("QZ Tray not available or failed, falling back to browser print");
-  }
-
+  // 3) Desktop: sem QZ Tray — o painel usa o NOOV Print Agent quando ha pedido;
+  // aqui so sobra HTML (ex.: conteudo ja renderizado). Cai no window.print.
   // 4) Fallback desktop: pop-up com window.print().
   const printWindow = window.open('', '_blank', 'width=400,height=600');
   if (!printWindow) {
@@ -314,7 +304,7 @@ export const printKitchenTicket = async (data: KitchenTicketData) => {
     return;
   }
 
-  // 3) Desktop: QZ Tray como fallback.
+  // 3) Desktop: pop-up (o painel ja tenta o Print Agent antes).
   const itemsHtml = data.items
     .map((it) => {
       const extras = (it.extras || [])
@@ -342,11 +332,6 @@ export const printKitchenTicket = async (data: KitchenTicketData) => {
       <div style="font-weight:bold;margin-bottom:4px">ITENS·${(data.items || []).reduce((s: number, it: any) => s + (Number(it?.qty) || 0), 0)}</div>
       ${itemsHtml}
     </div>`;
-
-  try {
-    const ok = await qzService.printHTML(html);
-    if (ok) { toast.success("Impressão enviada", SUCCESS_STYLE); return; }
-  } catch {}
 
   const w = window.open("", "_blank", "width=400,height=600");
   if (!w) { toast.error("Falha ao enviar impressão", ERROR_STYLE); return; }

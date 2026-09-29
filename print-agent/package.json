@@ -1,6 +1,6 @@
 {
   "name": "noov-print-agent",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "private": true,
   "description": "Agente local de impressao automatica do NOOV (balcao + cozinha)",
   "type": "module",

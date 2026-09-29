@@ -60,7 +60,6 @@ import { useAuth } from "@/contexts/AuthContext";
 import { usePdvUser } from "@/contexts/PdvUserContext";
 import { useStorePlanLimits } from "@/hooks/useStorePlanLimits";
 import { useToast } from "@/hooks/use-toast";
-import { qzService } from "@/utils/qzService";
 import { isMobileOrTabletDevice, printReceipt } from "@/utils/printHelper";
 
 import { renderToStaticMarkup } from "react-dom/server";
@@ -510,52 +509,31 @@ const Orders = () => {
     [loja, orders]
   );
 
-  // Auto print logic for QZ Tray — usa o HTML do ThermalReceipt
+  // Auto print via agente local — QZ Tray nao e mais usado.
   const printThermal = useCallback(
     async (order: any) => {
       if (!loja || !order) return;
       try {
-        const selectedPrinter =
-          (loja as any)?.impressora_qz_nome || localStorage.getItem("qz-selected-printer");
-        if (!selectedPrinter) return;
-
-        const content = renderReceiptHTML(order);
-
-        const printLabel = (label: string) => `
-          <div style="text-align:center;font-weight:900;font-size:11px;border:1px solid #000;margin-bottom:8px;padding:2px;font-family:monospace;">
-            VIA: ${label}
-          </div>
-        `;
-
-        const marginSettings = {
-          top: (loja as any).margem_superior || 0,
-          bottom: (loja as any).margem_inferior || 0,
-          left: (loja as any).margem_esquerda || 0,
-          right: (loja as any).margem_direita || 0,
-          doubleStrike: (loja as any).qz_double_strike || false,
-        };
-
-        if ((loja as any).impressao_duas_vias) {
-          await qzService.printHTML(printLabel("ESTABELECIMENTO") + content, selectedPrinter, marginSettings);
-          await qzService.printHTML(printLabel("ENTREGADOR") + content, selectedPrinter, marginSettings);
-        } else {
-          await qzService.printHTML(content, selectedPrinter, marginSettings);
+        const { printOrderViaAgent } = await import("@/utils/printAgentClient");
+        const agent = await printOrderViaAgent(order);
+        if (agent.ok) {
+          console.log("Auto-printed via Print Agent:", order.id);
+          return;
         }
-
-        console.log("Auto-printed via QZ Tray:", order.id);
+        if (!agent.offline) {
+          console.error("Print Agent error:", agent.error);
+        }
       } catch (error) {
-        console.error("QZ Auto print error:", error);
+        console.error("Print Agent auto print error:", error);
       }
     },
-    [loja, renderReceiptHTML],
+    [loja],
   );
 
   const printOrder = useCallback(
     async (order: any) => {
       if (!order) return;
 
-      const selectedPrinter =
-        (loja as any)?.impressora_qz_nome || localStorage.getItem("qz-selected-printer");
       const isMobileOrTablet = isMobileOrTabletDevice();
       const content = renderReceiptHTML(order);
 
@@ -574,14 +552,12 @@ const Orders = () => {
         return;
       }
 
-      // Desktop: se houver impressora Bluetooth pareada, prioriza ela.
-      let btAttempted = false;
+      // Desktop: Bluetooth se pareada.
       try {
         const { bluetoothPrintService, getBluetoothSettings } = await import("@/utils/bluetoothPrint");
         const bt = getBluetoothSettings();
         const btPaired = !!(bt.deviceId || bt.deviceName) && bluetoothPrintService.isSupported();
         if (btPaired) {
-          btAttempted = true;
           if (!bluetoothPrintService.isConnected()) {
             try { await bluetoothPrintService.tryAutoReconnect(); } catch {}
           }
@@ -593,19 +569,23 @@ const Orders = () => {
         }
       } catch {}
 
-      // Fallback QZ Tray: se BT indisponível/falhou, tenta impressora térmica QZ.
+      // Desktop: NOOV Print Agent (mesma impressora do teste).
       try {
-        await qzService.connect();
-        toast({ title: btAttempted ? "Bluetooth indisponível — usando impressora térmica..." : "Enviando para a impressora térmica..." });
-        await printThermal(order);
-        return;
-      } catch {
-        if (selectedPrinter) {
-          toast({ title: "Enviando para a impressora térmica..." });
-          await printThermal(order);
+        const { printOrderViaAgent } = await import("@/utils/printAgentClient");
+        const agent = await printOrderViaAgent(order);
+        if (agent.ok) {
+          toast({ title: "Impressão enviada para a térmica" });
           return;
         }
-      }
+        if (!agent.offline) {
+          toast({
+            title: "Erro na impressão",
+            description: agent.error || "Falha ao imprimir pelo agente.",
+            variant: "destructive",
+          });
+          return;
+        }
+      } catch {}
 
       try {
         toast({ title: "Abrindo janela de impressão..." });
@@ -619,7 +599,7 @@ const Orders = () => {
         });
       }
     },
-    [loja, printThermal, renderReceiptHTML],
+    [loja, renderReceiptHTML],
   );
 
 

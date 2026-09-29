@@ -642,35 +642,21 @@ const OrderDetail = () => {
         }
       }
 
-      // 2) QZ Tray (desktop)
-      const selectedPrinter = (loja as any)?.impressora_qz_nome || localStorage.getItem("qz-selected-printer");
-      if (selectedPrinter && !isMobileOrTablet) {
-        const printLabel = (label: string) => `
-          <div style="text-align:center;font-weight:900;font-size:11px;border:1px solid #000;margin-bottom:8px;padding:2px;font-family:monospace;">
-            VIA: ${label}
-          </div>
-        `;
-
-        const marginSettings = {
-          top: (loja as any).margem_superior || 0,
-          bottom: (loja as any).margem_inferior || 0,
-          left: (loja as any).margem_esquerda || 0,
-          right: (loja as any).margem_direita || 0
-        };
-
-        const { qzService } = await import("@/utils/qzService");
-
-        if ((loja as any)?.impressao_duas_vias) {
-          await qzService.printHTML(printLabel("ESTABELECIMENTO") + content, selectedPrinter, marginSettings);
-          await qzService.printHTML(printLabel("ENTREGADOR") + content, selectedPrinter, marginSettings);
-        } else {
-          await qzService.printHTML(content, selectedPrinter, marginSettings);
+      // 2) Desktop: NOOV Print Agent (mesma impressora do "Imprimir teste")
+      if (!isMobileOrTablet) {
+        const { printOrderViaAgent } = await import("@/utils/printAgentClient");
+        const agent = await printOrderViaAgent(order);
+        if (agent.ok) {
+          sonnerToast.success("Impressão enviada", PRINT_SUCCESS_STYLE);
+          return;
         }
-        sonnerToast.success("Impressão enviada", PRINT_SUCCESS_STYLE);
-        return;
+        if (!agent.offline) {
+          sonnerToast.error(agent.error || "Falha ao enviar impressão", PRINT_ERROR_STYLE);
+          return;
+        }
       }
 
-      // 3) Fallback: mobile sem BT ou desktop sem QZ
+      // 3) Fallback: mobile sem BT ou desktop sem agente
       if (isMobileOrTablet) {
         sonnerToast.error("Falha ao enviar impressão", PRINT_ERROR_STYLE);
         return;
@@ -685,6 +671,29 @@ const OrderDetail = () => {
   const printKitchen = async () => {
     try {
       const its = parseItems(order.items);
+      const { printOrderViaAgent } = await import("@/utils/printAgentClient");
+      const agent = await printOrderViaAgent(
+        {
+          ...order,
+          items: its.map((i: any) => ({
+            nome: i.nome || i.name || "Item",
+            quantidade: i.qtd || i.quantity || i.quantidade || 1,
+            observacao: i.observacao || i.observation || i.obs,
+            adicionais: i.adicionais || i.addons || i.extras,
+            sabores: i.sabores,
+            tamanho: i.tamanho,
+          })),
+        },
+        ["kitchen"],
+      );
+      if (agent.ok) {
+        toast({ title: "Comanda enviada para a cozinha" });
+        return;
+      }
+      if (!agent.offline) {
+        toast({ title: "Erro", description: agent.error || "Falha ao imprimir cozinha.", variant: "destructive" });
+        return;
+      }
       await printKitchenTicket({
         orderNumber: orderNumStr,
         date: new Date(order.created_at || Date.now()).toLocaleTimeString("pt-BR"),

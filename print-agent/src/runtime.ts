@@ -24,6 +24,10 @@ export function currentConfig(): AgentConfig | null {
   return config;
 }
 
+export function currentSession(): Session | null {
+  return session;
+}
+
 export function status(): RuntimeStatus {
   return {
     configured: Boolean(config),

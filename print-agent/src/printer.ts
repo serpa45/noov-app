@@ -40,7 +40,7 @@ export async function printOrder(
   order: OrderRow,
   loja: any,
   config: AgentConfig,
-  options: { source: string; only?: DocumentKind[] } = { source: "realtime" },
+  options: { source: string; only?: DocumentKind[]; force?: boolean } = { source: "realtime" },
 ): Promise<void> {
   const numero = orderLabel(order);
   const targets = config.printers.filter((p) => p.enabled);
@@ -51,7 +51,7 @@ export async function printOrder(
       : printer.documents;
     for (const kind of kinds) {
       const key = `${order.id}:${printer.name}:${kind}`;
-      if (alreadyPrinted(key)) {
+      if (!options.force && alreadyPrinted(key)) {
         log.debug(`Pedido ${numero} ja impresso em ${printer.name} (${DOC_LABEL[kind]}), ignorando.`);
         continue;
       }
