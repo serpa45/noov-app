@@ -197,7 +197,7 @@ const PrintAgentCard = () => {
       </div>
 
       <p className="text-[11px] text-muted-foreground leading-relaxed">
-        O QZ Tray não é mais necessário. A impressão automática passa a ser feita por este programa.
+        Configure uma vez no PC da loja. Depois disso, os pedidos aceitos saem sozinhos na impressora.
       </p>
     </div>
   );
