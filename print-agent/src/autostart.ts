@@ -1,5 +1,5 @@
 import { execFile } from "node:child_process";
-import { writeFileSync } from "node:fs";
+import { copyFileSync, existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { promisify } from "node:util";
 import { agentHome, isPackaged } from "./config.js";
@@ -17,14 +17,54 @@ function launcherPath(): string {
   return resolve(agentHome(), "iniciar-oculto.vbs");
 }
 
+/** Caminho fixo do .exe — nao muda quando o lojista baixa outra copia em Downloads. */
+export function installedExePath(): string {
+  return resolve(agentHome(), "noov-print-agent.exe");
+}
+
+/**
+ * Garante uma copia do agente em %APPDATA%\NOOV Print Agent\.
+ * O lancador automatico sempre aponta para esse arquivo, assim mover ou
+ * apagar o download original nao quebra a inicializacao com o Windows.
+ */
+export function ensureInstalledCopy(): string {
+  if (!isPackaged()) return process.execPath;
+
+  mkdirSync(agentHome(), { recursive: true });
+  const target = installedExePath();
+  const current = resolve(process.execPath);
+
+  if (current.toLowerCase() === target.toLowerCase()) return target;
+
+  try {
+    copyFileSync(current, target);
+    log.info(`Copia do agente atualizada em ${target}`);
+  } catch (err) {
+    if (!existsSync(target)) {
+      throw err instanceof Error ? err : new Error(String(err));
+    }
+    log.warn("Nao foi possivel atualizar a copia instalada; usando a existente.", err);
+  }
+  return target;
+}
+
 /**
  * O executavel e um app de console: chamado direto pela inicializacao do
- * Windows ele abriria uma janela preta na cara do operador. Este lancador em
- * VBScript sobe o agente sem janela nenhuma.
+ * Windows ele abriria uma janela preta. Este lancador sobe o agente sem
+ * janela e sem popup de erro se o arquivo sumir.
  */
-function writeLauncher(): string {
-  const exe = process.execPath.replace(/"/g, '""');
-  const script = ['Set sh = CreateObject("WScript.Shell")', `sh.Run """${exe}"" --background", 0, False`, ""].join("\r\n");
+function writeLauncher(exePath: string): string {
+  const exe = exePath.replace(/"/g, '""');
+  const script = [
+    'On Error Resume Next',
+    'Set fso = CreateObject("Scripting.FileSystemObject")',
+    'Set sh = CreateObject("WScript.Shell")',
+    `exe = "${exe}"`,
+    "If fso.FileExists(exe) Then",
+    '  sh.Run """" & exe & """ --background", 0, False',
+    "End If",
+    "",
+  ].join("\r\n");
   const path = launcherPath();
   writeFileSync(path, script, "latin1");
   return path;
@@ -63,11 +103,24 @@ export async function enableAutostart(): Promise<void> {
   if (!autostartSupported()) {
     throw new Error("A inicializacao automatica so esta disponivel no executavel do Windows.");
   }
-  const value = `wscript.exe "${writeLauncher()}"`;
+  const exe = ensureInstalledCopy();
+  const value = `wscript.exe "${writeLauncher(exe)}"`;
   await powershell(
     `Set-ItemProperty -Path ${psQuote(RUN_KEY)} -Name ${psQuote(ENTRY_NAME)} -Value ${psQuote(value)} -Force`,
   );
   log.info("Inicializacao automatica com o Windows ativada.");
+}
+
+/** Regrava o .vbs apontando para a copia instalada atual — evita o erro 80070002. */
+export async function refreshAutostartIfEnabled(): Promise<void> {
+  if (!autostartSupported()) return;
+  if (!(await isAutostartEnabled())) return;
+  try {
+    await enableAutostart();
+    log.info("Lancador de inicializacao atualizado.");
+  } catch (err) {
+    log.warn("Nao foi possivel atualizar o lancador de inicializacao.", err);
+  }
 }
 
 export async function disableAutostart(): Promise<void> {

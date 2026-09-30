@@ -7,7 +7,7 @@ const MANIFEST_URL =
   "https://mwnjoglolbyeyrmkqqqc.supabase.co/storage/v1/object/public/installers/print-agent/latest.json";
 
 const FALLBACK_URL =
-  "https://github.com/serpa45/noov-app/releases/download/print-agent-v1.0.1/noov-print-agent.exe";
+  "https://github.com/serpa45/noov-app/releases/download/print-agent-v1.0.2/noov-print-agent.exe";
 
 const AGENT_STATUS_URL = "http://127.0.0.1:7777/api/status";
 

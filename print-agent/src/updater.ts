@@ -1,8 +1,9 @@
 import { spawn } from "node:child_process";
 import { existsSync, renameSync, statSync, unlinkSync } from "node:fs";
 import { writeFile } from "node:fs/promises";
-import { dirname, resolve } from "node:path";
-import { isPackaged } from "./config.js";
+import { resolve } from "node:path";
+import { agentHome, isPackaged } from "./config.js";
+import { installedExePath } from "./autostart.js";
 import { log } from "./logger.js";
 
 declare const __AGENT_VERSION__: string;
@@ -19,8 +20,9 @@ function manifestUrl(): string {
 }
 
 function paths() {
-  const exe = process.execPath;
-  const dir = dirname(exe);
+  // Atualizacao sempre na copia instalada em %APPDATA%, nao no Download.
+  const exe = isPackaged() ? installedExePath() : process.execPath;
+  const dir = agentHome();
   return {
     exe,
     pending: resolve(dir, "noov-print-agent.new.exe"),

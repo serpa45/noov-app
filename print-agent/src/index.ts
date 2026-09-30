@@ -1,4 +1,5 @@
 import { spawn } from "node:child_process";
+import { ensureInstalledCopy, refreshAutostartIfEnabled } from "./autostart.js";
 import { tryLoadConfig } from "./config.js";
 import { configureLogger, log } from "./logger.js";
 import { applyConfig, status } from "./runtime.js";
@@ -19,8 +20,22 @@ function openBrowser(url: string): void {
 }
 
 async function main(): Promise<void> {
+  // Copia o .exe para um caminho fixo ANTES de aplicar atualizacao,
+  // para o lancador do Windows nao depender da pasta Downloads.
+  try {
+    ensureInstalledCopy();
+  } catch (err) {
+    log.warn("Nao foi possivel preparar a copia instalada:", err);
+  }
+
   if (applyPendingUpdate()) {
     process.exit(0);
+  }
+
+  try {
+    await refreshAutostartIfEnabled();
+  } catch (err) {
+    log.warn("Nao foi possivel atualizar o lancador de inicializacao:", err);
   }
 
   const background = process.argv.includes("--background");
