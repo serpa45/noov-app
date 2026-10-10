@@ -1,192 +1,12 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
+import { activatePlanPayment, getPaymentToken } from "../_shared/plan-payment.ts";
+
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers":
     "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
 };
-
-async function activatePlan(
-  supabaseAdmin: any,
-  ref: { loja_id: string; plano_id: string; user_id: string },
-  valorPago?: number,
-  paymentId?: string | number
-) {
-  // 1. Get plan details
-  const { data: plano } = await supabaseAdmin
-    .from("planos")
-    .select("*")
-    .eq("id", ref.plano_id)
-    .single();
-
-  if (!plano) {
-    console.error("Plan not found:", ref.plano_id);
-    return false;
-  }
-
-  // 2. Calculate expiration: 30 days from now, or 30 days from current expiration if still active
-  const { data: currentPlan } = await supabaseAdmin
-    .from("loja_planos")
-    .select("expira_em, plano_id, promo_pagamentos_feitos")
-    .eq("loja_id", ref.loja_id)
-    .eq("ativo", true)
-    .maybeSingle();
-
-  const now = new Date();
-  let baseDate = now;
-
-  if (currentPlan?.expira_em) {
-    const currentExp = new Date(currentPlan.expira_em);
-    if (currentExp > now) {
-      baseDate = currentExp;
-    }
-  }
-
-  const expiraEm = new Date(baseDate);
-  expiraEm.setDate(expiraEm.getDate() + 30);
-
-  const finalPrice = valorPago != null ? Number(valorPago) : Number(plano.preco);
-
-  // Calculate promo payments
-  let promoPagamentosFeitos = currentPlan?.promo_pagamentos_feitos || 0;
-
-  // If plan changed, reset counter
-  if (currentPlan?.plano_id !== ref.plano_id) {
-    promoPagamentosFeitos = 0;
-  }
-
-  // If paid price is the promo price, increment counter
-  if (plano.preco_promocional && Number(finalPrice) === Number(plano.preco_promocional)) {
-    promoPagamentosFeitos += 1;
-  }
-
-  // 3. Upsert loja_planos
-  const { error: upsertErr } = await supabaseAdmin
-    .from("loja_planos")
-    .upsert(
-      {
-        loja_id: ref.loja_id,
-        plano_id: ref.plano_id,
-        preco_assinado: finalPrice,
-        features_assinado: plano.features,
-        limites_assinado: plano.limites,
-        ativo: true,
-        assinado_em: new Date().toISOString(),
-        expira_em: expiraEm.toISOString(),
-        promo_pagamentos_feitos: promoPagamentosFeitos,
-      },
-      { onConflict: "loja_id" }
-    );
-
-  if (upsertErr) {
-    console.error("Upsert error in loja_planos:", upsertErr);
-    return false;
-  }
-
-  console.log(`Plan ${plano.nome} activated for store ${ref.loja_id}, expires at ${expiraEm.toISOString()}`);
-
-  // 4. Record payment in pagamentos_loja (Financial / Invoices history)
-  const extId = paymentId ? String(paymentId) : null;
-  let alreadyRecorded = false;
-  if (extId) {
-    const { data: existingPag } = await supabaseAdmin
-      .from("pagamentos_loja")
-      .select("id")
-      .eq("payment_external_id", extId)
-      .maybeSingle();
-    if (existingPag) {
-      alreadyRecorded = true;
-    }
-  }
-
-  if (!alreadyRecorded) {
-    const { error: pagErr } = await supabaseAdmin
-      .from("pagamentos_loja")
-      .insert({
-        loja_id: ref.loja_id,
-        plano_id: ref.plano_id,
-        plano_nome: plano.nome,
-        valor: finalPrice,
-        metodo: "mercadopago",
-        status: "aprovado",
-        payment_external_id: extId,
-      });
-
-    if (pagErr) {
-      console.error("Payment record error in pagamentos_loja:", pagErr);
-    } else {
-      console.log(`Payment of R$ ${finalPrice.toFixed(2)} recorded in pagamentos_loja for store ${ref.loja_id}`);
-    }
-  }
-
-  // 5. Generate affiliate commission (if store has an affiliate)
-  try {
-    const { data: loja } = await supabaseAdmin
-      .from("lojas")
-      .select("afiliado_id")
-      .eq("id", ref.loja_id)
-      .single();
-
-    if (loja?.afiliado_id) {
-      const { data: profile } = await supabaseAdmin
-        .from("profiles")
-        .select("comissao_percent")
-        .eq("user_id", loja.afiliado_id)
-        .single();
-
-      const { data: globalConfig } = await supabaseAdmin
-        .from("configuracoes_globais")
-        .select("valor")
-        .eq("chave", "comissao_afiliado_percent")
-        .maybeSingle();
-
-      const globalComissao = globalConfig?.valor ? parseFloat(globalConfig.valor) : 10;
-
-      // Priority: Affiliate specific > Global config
-      const percentual =
-        profile?.comissao_percent != null
-          ? parseFloat(profile.comissao_percent)
-          : globalComissao;
-
-      const valorComissao = Number(((finalPrice * percentual) / 100).toFixed(2));
-
-      // Avoid duplicate commission in the last 15 minutes for the same store
-      const fifteenMinutesAgo = new Date(Date.now() - 15 * 60 * 1000).toISOString();
-      const { data: existingComissao } = await supabaseAdmin
-        .from("comissoes")
-        .select("id")
-        .eq("loja_id", ref.loja_id)
-        .eq("afiliado_id", loja.afiliado_id)
-        .gte("created_at", fifteenMinutesAgo)
-        .maybeSingle();
-
-      if (!existingComissao && valorComissao > 0) {
-        const { error: comissaoErr } = await supabaseAdmin
-          .from("comissoes")
-          .insert({
-            afiliado_id: loja.afiliado_id,
-            loja_id: ref.loja_id,
-            valor_pedido: finalPrice,
-            percentual,
-            valor_comissao: valorComissao,
-            status: "pendente",
-          });
-
-        if (comissaoErr) {
-          console.error("Commission insert error:", comissaoErr);
-        } else {
-          console.log(`Commission of R$${valorComissao.toFixed(2)} (${percentual}%) created for affiliate ${loja.afiliado_id}`);
-        }
-      } else if (existingComissao) {
-        console.log(`Commission already exists for store ${ref.loja_id} in the last 15 minutes`);
-      }
-    }
-  } catch (comErr) {
-    console.error("Commission generation error:", comErr);
-  }
-
-  return true;
-}
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
@@ -203,7 +23,8 @@ Deno.serve(async (req) => {
       });
     }
 
-    const accessToken = Deno.env.get("MERCADOPAGO_ACCESS_TOKEN");
+    const supabaseAdmin = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
+    const accessToken = await getPaymentToken(supabaseAdmin);
     if (!accessToken) {
       return new Response(JSON.stringify({ error: "Token não configurado" }), {
         status: 500,
@@ -241,7 +62,7 @@ Deno.serve(async (req) => {
       }
 
       // Fallback to metadata
-      if (!ref && payment.metadata?.loja_id && payment.metadata?.plano_id) {
+      if ((!ref?.loja_id || !ref?.plano_id) && payment.metadata?.loja_id && payment.metadata?.plano_id) {
         ref = {
           loja_id: payment.metadata.loja_id,
           plano_id: payment.metadata.plano_id,
@@ -250,26 +71,9 @@ Deno.serve(async (req) => {
       }
 
       if (ref?.loja_id && ref?.plano_id) {
-        const supabaseAdmin = createClient(
-          Deno.env.get("SUPABASE_URL")!,
-          Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
-        );
-
-        // Check if this payment was already processed in pagamentos_loja
-        const { data: existingPag } = await supabaseAdmin
-          .from("pagamentos_loja")
-          .select("id")
-          .eq("payment_external_id", String(payment_id))
-          .maybeSingle();
-
-        if (!existingPag) {
-          console.log(`Activating plan, recording financial invoice and affiliate commission for store ${ref.loja_id}`);
-          await activatePlan(supabaseAdmin, ref, payment.transaction_amount, payment_id);
-        } else {
-          console.log(`Payment ${payment_id} already recorded for store ${ref.loja_id}`);
-        }
+        await activatePlanPayment(supabaseAdmin, ref, payment.transaction_amount, payment_id);
       } else {
-        console.error("Could not extract ref from payment:", payment_id);
+        throw new Error(`Could not extract plan reference from payment ${payment_id}`);
       }
     }
 

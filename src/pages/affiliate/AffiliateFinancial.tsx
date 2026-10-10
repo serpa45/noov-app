@@ -15,6 +15,8 @@ import { useAuth } from "@/contexts/AuthContext";
 import { useToast } from "@/hooks/use-toast";
 import { useRealtimeSubscription } from "@/hooks/useRealtimeSubscription";
 
+import { affiliateBalance, toCents } from "@/utils/affiliateBalance";
+
 const AffiliateFinancial = () => {
   const { user } = useAuth();
 
@@ -25,27 +27,29 @@ const AffiliateFinancial = () => {
   const [showSaque, setShowSaque] = useState(false);
   const [saqueValor, setSaqueValor] = useState("");
 
-  const { data: comissoes = [], isLoading: loadingComissoes } = useQuery({
+  const { data: comissoes = [], isLoading: loadingComissoes, isError: errorComissoes } = useQuery({
     queryKey: ["afiliado-comissoes", user?.id],
     queryFn: async () => {
-      const { data } = await supabase
+      const { data, error } = await supabase
         .from("comissoes")
         .select("*")
         .eq("afiliado_id", user!.id)
         .order("created_at", { ascending: false });
+      if (error) throw error;
       return data ?? [];
     },
     enabled: !!user,
   });
 
-  const { data: saques = [], isLoading: loadingSaques } = useQuery({
+  const { data: saques = [], isLoading: loadingSaques, isError: errorSaques } = useQuery({
     queryKey: ["afiliado-saques", user?.id],
     queryFn: async () => {
-      const { data } = await supabase
+      const { data, error } = await supabase
         .from("saques")
         .select("*")
         .eq("afiliado_id", user!.id)
         .order("created_at", { ascending: false });
+      if (error) throw error;
       return data ?? [];
     },
     enabled: !!user,
@@ -62,12 +66,13 @@ const AffiliateFinancial = () => {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["afiliado-saques"] });
+      queryClient.invalidateQueries({ queryKey: ["affiliate-saques-dash"] });
       setShowSaque(false);
       setSaqueValor("");
       toast({ title: "Saque solicitado! 💸", description: "O administrador será notificado." });
     },
-    onError: () => {
-      toast({ title: "Erro ao solicitar saque", variant: "destructive" });
+    onError: (error: Error) => {
+      toast({ title: "Erro ao solicitar saque", description: error.message, variant: "destructive" });
     },
   });
 
@@ -82,24 +87,29 @@ const AffiliateFinancial = () => {
     const totalSaquesAprovados = saques.filter((s: any) => s.status === "pago").reduce((sum: number, s: any) => sum + Number(s.valor), 0);
     const totalPago = totalSaquesAprovados;
     const totalSaquesPendentes = saques.filter((s: any) => s.status === "pendente").reduce((sum: number, s: any) => sum + Number(s.valor), 0);
-    const saldoDisponivel = totalComissoes - totalSaquesAprovados;
+    const saldoDisponivel = affiliateBalance(comissoes, saques);
     return { totalComissoes, totalPago, totalSaquesAprovados, totalSaquesPendentes, saldoDisponivel };
   }, [comissoes, saques]);
 
   const isLoading = loadingComissoes || loadingSaques;
 
   const handleSolicitar = () => {
+    if (errorComissoes || errorSaques || isLoading) return;
     const valor = Number(saqueValor.replace(",", "."));
-    if (!valor || valor <= 0) {
+    if (!Number.isFinite(valor) || valor <= 0 || Math.abs(valor * 100 - toCents(valor)) > 0.000001) {
       toast({ title: "Informe um valor válido", variant: "destructive" });
       return;
     }
-    if (valor > stats.saldoDisponivel) {
+    if (toCents(valor) > toCents(stats.saldoDisponivel)) {
       toast({ title: "Saldo insuficiente", description: `Disponível: ${formatCurrency(stats.saldoDisponivel)}`, variant: "destructive" });
       return;
     }
-    solicitarSaque.mutate(valor);
+    solicitarSaque.mutate(toCents(valor) / 100);
   };
+
+  if (errorComissoes || errorSaques) {
+    return <p role="alert">Não foi possível consultar seu saldo. Atualize a página e tente novamente.</p>;
+  }
 
   if (isLoading) {
     return (
@@ -248,6 +258,8 @@ const AffiliateFinancial = () => {
               <Label className="text-xs">Valor do saque (R$)</Label>
               <Input
                 type="number"
+                min="0.01"
+                step="0.01"
                 placeholder="0,00"
                 className="mt-1"
                 value={saqueValor}

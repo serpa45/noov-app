@@ -39,6 +39,8 @@ import {
   Legend,
 } from "recharts";
 
+import { affiliateBalance } from "@/utils/affiliateBalance";
+
 const AffiliateDashboard = () => {
   const [copied, setCopied] = useState(false);
   const { user } = useAuth();
@@ -117,7 +119,7 @@ const AffiliateDashboard = () => {
   const totalSaquesPendentes = saques.filter((s: any) => s.status === "pendente").reduce((sum: number, s: any) => sum + Number(s.valor), 0);
   
   // O saldo disponível para saque é o total de comissões menos saques já aprovados ou pendentes
-  const saldoDisponivel = Math.max(0, totalComissao - totalSaquesAprovados - totalSaquesPendentes);
+  const saldoDisponivel = affiliateBalance(comissoes, saques);
   
   // A comissão pendente no card deve refletir o que o usuário ainda tem a receber (total - pago)
   const comissaoPendente = Math.max(0, totalComissao - totalSaquesAprovados);
