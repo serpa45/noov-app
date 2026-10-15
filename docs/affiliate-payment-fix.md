@@ -59,3 +59,11 @@ de Edge Functions. Não altera valores, aprova solicitações pendentes nem
 regulariza pagamentos históricos automaticamente. Caso um pagamento tenha
 sido marcado somente em `comissoes`, confira o comprovante antes de confirmar
 o saque correspondente em `/admin/saques`.
+
+### Projeto de produção na Vercel
+
+O deploy automático do GitHub publica em `serpa-app/noov-app-qkon`.
+O domínio `noov.app.br` está no projeto `sbarros82s-projects/noov-app`.
+Verifique o domínio após publicar; o sucesso do deploy automático, sozinho,
+não confirma a atualização desse domínio. O `vercel.json` declara o framework
+Vite e a saída `dist` para publicar o código-fonte no projeto correto.
