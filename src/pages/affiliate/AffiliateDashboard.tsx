@@ -39,7 +39,7 @@ import {
   Legend,
 } from "recharts";
 
-import { affiliateBalance } from "@/utils/affiliateBalance";
+import { affiliateBalance, affiliateTotals } from "@/utils/affiliateBalance";
 
 const AffiliateDashboard = () => {
   const [copied, setCopied] = useState(false);
@@ -51,7 +51,7 @@ const AffiliateDashboard = () => {
   const { data: profile, isLoading: profileLoading } = useQuery({
     queryKey: ["affiliate-profile-dash", user?.id],
     queryFn: async () => {
-      const { data } = await supabase
+      const { data, error } = await supabase
         .from("profiles")
         .select("codigo_afiliado, full_name")
         .eq("user_id", user!.id)
@@ -64,24 +64,26 @@ const AffiliateDashboard = () => {
   const { data: lojas = [], isLoading: lojasLoading } = useQuery({
     queryKey: ["affiliate-lojas-dash", user?.id],
     queryFn: async () => {
-      const { data } = await supabase
+      const { data, error } = await supabase
         .from("lojas")
         .select("id, nome, slug, segmento, created_at")
         .eq("afiliado_id", user!.id)
         .order("created_at", { ascending: false });
+      if (error) throw error;
       return data ?? [];
     },
     enabled: !!user,
   });
 
-  const { data: comissoes = [], isLoading: comissoesLoading } = useQuery({
+  const { data: comissoes = [], isLoading: comissoesLoading, isError: errorComissoes } = useQuery({
     queryKey: ["affiliate-comissoes-dash", user?.id],
     queryFn: async () => {
-      const { data } = await supabase
+      const { data, error } = await supabase
         .from("comissoes")
         .select("*")
         .eq("afiliado_id", user!.id)
         .order("created_at", { ascending: false });
+      if (error) throw error;
       return data ?? [];
     },
     enabled: !!user,
@@ -90,7 +92,7 @@ const AffiliateDashboard = () => {
   const { data: comissaoPercent } = useQuery({
     queryKey: ["config-global", "comissao_afiliado_percent"],
     queryFn: async () => {
-      const { data } = await supabase
+      const { data, error } = await supabase
         .from("configuracoes_globais")
         .select("valor")
         .eq("chave", "comissao_afiliado_percent")
@@ -99,13 +101,15 @@ const AffiliateDashboard = () => {
     },
   });
 
-  const { data: saques = [], isLoading: saquesLoading } = useQuery({
+  const { data: saques = [], isLoading: saquesLoading, isError: errorSaques } = useQuery({
     queryKey: ["affiliate-saques-dash", user?.id],
+    refetchInterval: 15000,
     queryFn: async () => {
-      const { data } = await supabase
+      const { data, error } = await supabase
         .from("saques")
         .select("*")
         .eq("afiliado_id", user!.id);
+      if (error) throw error;
       return data ?? [];
     },
     enabled: !!user,
@@ -122,7 +126,7 @@ const AffiliateDashboard = () => {
   const saldoDisponivel = affiliateBalance(comissoes, saques);
   
   // A comissão pendente no card deve refletir o que o usuário ainda tem a receber (total - pago)
-  const comissaoPendente = Math.max(0, totalComissao - totalSaquesAprovados);
+  const comissaoPendente = affiliateTotals(comissoes, saques).unpaid;
   const totalIndicados = lojas.length;
 
   const copyLink = () => {
@@ -183,6 +187,8 @@ const AffiliateDashboard = () => {
     return { earnings, indicacoes };
   }, [comissoes, lojas, lojasLoading, comissoesLoading]);
 
+  if (errorComissoes || errorSaques) return <p role="alert">Falha ao consultar os ganhos e saques. Atualize a tela.</p>;
+
   if (isLoading) {
     return (
       <div className="flex justify-center py-12">
@@ -197,7 +203,7 @@ const AffiliateDashboard = () => {
   const stats = [
     { label: "Total de Indicados", value: String(totalIndicados), icon: Users, color: "text-primary", borderColor: "bg-primary" },
     { label: "Lojas Ativas", value: String(totalIndicados), icon: TrendingUp, color: "text-primary", borderColor: "bg-primary" },
-    { label: "Comissão Pendente", value: formatCurrency(comissaoPendente), icon: Clock, color: "text-red-600", borderColor: "bg-red-500" },
+    { label: "Comissões a Receber", value: formatCurrency(comissaoPendente), icon: Clock, color: "text-red-600", borderColor: "bg-red-500" },
     { label: "Comissão Paga", value: formatCurrency(totalSaquesAprovados), icon: Check, color: "text-green-600", borderColor: "bg-green-500" },
     { label: "Comissão Total", value: formatCurrency(totalComissao), icon: DollarSign, color: "text-accent", borderColor: "bg-accent" },
   ];
@@ -387,7 +393,7 @@ const AffiliateDashboard = () => {
                       <th className="p-4 font-bold text-muted-foreground uppercase text-[10px] tracking-wider border-r border-border/40">Loja</th>
                       <th className="p-4 font-bold text-muted-foreground uppercase text-[10px] tracking-wider border-r border-border/40">Data de Cadastro</th>
                       <th className="p-4 font-bold text-muted-foreground uppercase text-[10px] tracking-wider border-r border-border/40 text-right">Comissão Total</th>
-                      <th className="p-4 font-bold text-muted-foreground uppercase text-[10px] tracking-wider text-right">Valor Pago</th>
+                      <th className="p-4 font-bold text-muted-foreground uppercase text-[10px] tracking-wider text-right">Pagamentos</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-border/40">
@@ -401,7 +407,6 @@ const AffiliateDashboard = () => {
                       lojas.map((loja) => {
                         const lojaComissoes = comissoes.filter(c => c.loja_id === loja.id);
                         const totalLoja = lojaComissoes.reduce((s, c) => s + Number(c.valor_comissao), 0);
-                        const pagoLoja = lojaComissoes.filter(c => c.status === "pago").reduce((s, c) => s + Number(c.valor_comissao), 0);
                         return (
                           <tr key={loja.id} className="hover:bg-muted/30 transition-colors">
                             <td className="p-4 font-medium text-foreground border-r border-border/40">
@@ -417,7 +422,7 @@ const AffiliateDashboard = () => {
                               {formatCurrency(totalLoja)}
                             </td>
                             <td className="p-4 text-right text-success font-medium">
-                              {pagoLoja > 0 ? formatCurrency(pagoLoja) : "—"}
+                              <a href="/afiliado/financeiro" className="underline">Ver saques</a>
                             </td>
                           </tr>
                         );
@@ -454,29 +459,13 @@ const AffiliateDashboard = () => {
                       comissoes.map((c) => (
                         <tr key={c.id} className="hover:bg-muted/30 transition-colors">
                           <td className="p-4 font-medium text-foreground border-r border-border/40">
-                            Comissão Recebida
+                            Comissão Gerada
                           </td>
                           <td className="p-4 text-muted-foreground border-r border-border/40">
                             {format(new Date(c.created_at), "dd/MM/yyyy 'às' HH:mm")}
                           </td>
                           <td className="p-4 border-r border-border/40">
-                            {c.status === "pago" ? (
-                              <div className="flex flex-col gap-0.5">
-                                <Badge className="bg-success hover:bg-success text-white px-3 py-0.5 rounded-full text-[10px] w-fit">
-                                  <Check className="w-3 h-3 mr-1" />
-                                  Comissão paga
-                                </Badge>
-                                {c.pago_em && (
-                                  <span className="text-[10px] text-muted-foreground pl-1">
-                                    em {format(new Date(c.pago_em), "dd/MM/yyyy 'às' HH:mm")}
-                                  </span>
-                                )}
-                              </div>
-                            ) : (
-                              <Badge variant="secondary" className="px-3 py-0.5 rounded-full text-[10px] bg-amber-100 text-amber-700 border-amber-200 w-fit">
-                                Pendente
-                              </Badge>
-                            )}
+                            <Badge variant="secondary">Registrada</Badge>
                           </td>
                           <td className="p-4 text-right text-success font-bold">
                             + {formatCurrency(Number(c.valor_comissao))}
@@ -500,7 +489,7 @@ const AffiliateDashboard = () => {
                   <thead>
                     <tr className="bg-muted/50 border-b border-border/60">
                       <th className="p-4 font-bold text-muted-foreground uppercase text-[10px] tracking-wider border-r border-border/40">Status</th>
-                      <th className="p-4 font-bold text-muted-foreground uppercase text-[10px] tracking-wider border-r border-border/40">Valor Pago</th>
+                      <th className="p-4 font-bold text-muted-foreground uppercase text-[10px] tracking-wider border-r border-border/40">Valor do Saque</th>
                       <th className="p-4 font-bold text-muted-foreground uppercase text-[10px] tracking-wider border-r border-border/40">Solicitado Em</th>
                       <th className="p-4 font-bold text-muted-foreground uppercase text-[10px] tracking-wider">Pago Em</th>
                     </tr>
@@ -522,7 +511,7 @@ const AffiliateDashboard = () => {
                                 ? "bg-success hover:bg-success text-white px-3 py-0.5 rounded-full text-[10px]" 
                                 : "px-3 py-0.5 rounded-full text-[10px] bg-amber-100 text-amber-700 border-amber-200"}
                             >
-                              {s.status === "pago" ? "Pago" : "Pendente"}
+                              {s.status === "pago" ? "Pago" : s.status === "rejeitado" ? "Rejeitado" : "Pendente"}
                             </Badge>
                           </td>
                           <td className="p-4 font-bold text-foreground border-r border-border/40">

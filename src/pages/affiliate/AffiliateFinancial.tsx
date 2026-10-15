@@ -9,13 +9,13 @@ import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
-  Dialog, DialogContent, DialogHeader, DialogTitle,
+  Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription,
 } from "@/components/ui/dialog";
 import { useAuth } from "@/contexts/AuthContext";
 import { useToast } from "@/hooks/use-toast";
 import { useRealtimeSubscription } from "@/hooks/useRealtimeSubscription";
 
-import { affiliateBalance, toCents } from "@/utils/affiliateBalance";
+import { affiliateBalance, toCents, parseWithdrawalAmount } from "@/utils/affiliateBalance";
 
 const AffiliateFinancial = () => {
   const { user } = useAuth();
@@ -43,6 +43,7 @@ const AffiliateFinancial = () => {
 
   const { data: saques = [], isLoading: loadingSaques, isError: errorSaques } = useQuery({
     queryKey: ["afiliado-saques", user?.id],
+    refetchInterval: 15000,
     queryFn: async () => {
       const { data, error } = await supabase
         .from("saques")
@@ -95,8 +96,8 @@ const AffiliateFinancial = () => {
 
   const handleSolicitar = () => {
     if (errorComissoes || errorSaques || isLoading) return;
-    const valor = Number(saqueValor.replace(",", "."));
-    if (!Number.isFinite(valor) || valor <= 0 || Math.abs(valor * 100 - toCents(valor)) > 0.000001) {
+    const valor = parseWithdrawalAmount(saqueValor);
+    if (valor === null) {
       toast({ title: "Informe um valor válido", variant: "destructive" });
       return;
     }
@@ -221,6 +222,7 @@ const AffiliateFinancial = () => {
           <CardTitle className="text-base font-display flex items-center gap-2">
             <Wallet className="w-4 h-4 text-muted-foreground" /> Últimas Comissões
           </CardTitle>
+          <p className="text-xs text-muted-foreground">Ganhos registrados. Acompanhe os pagamentos nas solicitações de saque.</p>
         </CardHeader>
         <CardContent>
           {comissoes.length === 0 ? (
@@ -233,8 +235,8 @@ const AffiliateFinancial = () => {
                     <p className="text-sm font-medium">{formatCurrency(Number(c.valor_comissao))}</p>
                     <p className="text-[10px] text-muted-foreground">{c.percentual}% de {formatCurrency(Number(c.valor_pedido))} · {formatDate(c.created_at)}</p>
                   </div>
-                  <Badge variant="outline" className={`text-[10px] ${c.status === "pago" ? "text-green-700 border-green-200" : "text-yellow-600 border-yellow-200"}`}>
-                    {c.status === "pago" ? "Pago" : "Pendente"}
+                  <Badge variant="outline" className="text-[10px] text-muted-foreground">
+                    Registrada
                   </Badge>
                 </div>
               ))}
@@ -248,6 +250,7 @@ const AffiliateFinancial = () => {
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle className="font-display">Solicitar Saque</DialogTitle>
+            <DialogDescription>Informe o valor em reais, incluindo os centavos. Exemplo: 26,22.</DialogDescription>
           </DialogHeader>
           <div className="space-y-4 mt-2">
             <div className="p-4 rounded-xl bg-muted/50 text-center">
@@ -257,9 +260,10 @@ const AffiliateFinancial = () => {
             <div>
               <Label className="text-xs">Valor do saque (R$)</Label>
               <Input
-                type="number"
-                min="0.01"
-                step="0.01"
+                type="text"
+                inputMode="decimal"
+                autoComplete="off"
+                aria-label="Valor do saque em reais"
                 placeholder="0,00"
                 className="mt-1"
                 value={saqueValor}

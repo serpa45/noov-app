@@ -37,3 +37,25 @@ funções verifica os tipos. O teste transacional isolado está em
 sem acessar o Supabase. Instale `@electric-sql/pglite` em uma pasta temporária
 e defina `PGLITE_MODULE` com o caminho absoluto de `dist/index.js` desse pacote
 antes de executar `node supabase/tests/plan-payment.test.mjs`.
+
+## Correção da entrada de centavos e pendências (15/10/2026)
+
+O campo de saque usa entrada textual com teclado decimal e aceita `26,22`
+ou `26.22`, sem depender da interpretação de vírgulas pelo navegador.
+
+Os totais pagos e a pagar passam a usar os registros de `saques` em todas
+as telas. Uma comissão é um ganho registrado; seu antigo campo `status`
+não comprova pagamento de um saque. As telas de comissões exibem os ganhos
+registrados e a confirmação de pagamento fica em `/admin/saques`.
+Isso também permite contabilizar corretamente saques parciais, sem atribuir
+um saque a uma loja ou comissão específica sem vínculo no banco.
+
+A confirmação exige que exatamente um saque ainda pendente seja atualizado.
+As telas de saques consultam novamente os dados a cada 15 segundos enquanto
+abertas, além das atualizações em tempo real existentes.
+
+Esta atualização é apenas do frontend e não exige nova migração ou publicação
+de Edge Functions. Não altera valores, aprova solicitações pendentes nem
+regulariza pagamentos históricos automaticamente. Caso um pagamento tenha
+sido marcado somente em `comissoes`, confira o comprovante antes de confirmar
+o saque correspondente em `/admin/saques`.

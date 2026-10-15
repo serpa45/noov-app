@@ -1,3 +1,5 @@
+import { unpaidAffiliateCommissions } from "@/utils/affiliateBalance";
+import { useRealtimeSubscription } from "@/hooks/useRealtimeSubscription";
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
@@ -14,18 +16,22 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
 const AdminWithdrawals = () => {
   const { toast } = useToast();
   const queryClient = useQueryClient();
+  useRealtimeSubscription("saques", [["admin-saques"]]);
+  useRealtimeSubscription("comissoes", [["admin-withdrawal-commissions"]]);
   const [pixProfile, setPixProfile] = useState<any>(null);
   const [copied, setCopied] = useState(false);
   const [rejectId, setRejectId] = useState<string | null>(null);
   const [rejectReason, setRejectReason] = useState("");
 
-  const { data: saques = [], isLoading } = useQuery({
+  const { data: saques = [], isLoading, isError: saquesError } = useQuery({
     queryKey: ["admin-saques"],
+    refetchInterval: 15000,
     queryFn: async () => {
-      const { data } = await supabase
+      const { data, error } = await supabase
         .from("saques")
         .select("*")
         .order("created_at", { ascending: false });
+      if (error) throw error;
       return data ?? [];
     },
   });
@@ -33,21 +39,22 @@ const AdminWithdrawals = () => {
   const { data: profiles = [] } = useQuery({
     queryKey: ["admin-saques-profiles"],
     queryFn: async () => {
-      const { data } = await supabase
+      const { data, error } = await supabase
         .from("profiles")
         .select("user_id, full_name, email, pix_tipo, pix_chave, pix_nome_favorecido, avatar_url")
         .not("codigo_afiliado", "is", null);
+      if (error) throw error;
       return data ?? [];
     },
   });
 
-  const { data: comissoesPendentes = [] } = useQuery({
-    queryKey: ["admin-comissoes-pendentes"],
+  const { data: comissoes = [], isLoading: loadingComissoes, isError: comissoesError } = useQuery({
+    queryKey: ["admin-withdrawal-commissions"],
     queryFn: async () => {
-      const { data } = await supabase
+      const { data, error } = await supabase
         .from("comissoes")
-        .select("valor_comissao")
-        .eq("status", "pendente");
+        .select("valor_comissao, afiliado_id");
+      if (error) throw error;
       return data ?? [];
     },
   });
@@ -57,11 +64,16 @@ const AdminWithdrawals = () => {
       const updateData: any = { status };
       if (status === "pago") updateData.pago_em = new Date().toISOString();
       if (status === "rejeitado" && motivo_rejeicao) updateData.motivo_rejeicao = motivo_rejeicao;
-      const { error } = await supabase.from("saques").update(updateData).eq("id", id);
+      const { error } = await supabase.from("saques").update(updateData)
+        .eq("id", id).eq("status", "pendente").select("id").single();
       if (error) throw error;
     },
     onSuccess: (_, { status }) => {
       queryClient.invalidateQueries({ queryKey: ["admin-saques"] });
+      queryClient.invalidateQueries({ queryKey: ["admin-afiliado-saques"] });
+      queryClient.invalidateQueries({ queryKey: ["admin-afiliado-saques-all"] });
+      queryClient.invalidateQueries({ queryKey: ["affiliate-saques-dash"] });
+      queryClient.invalidateQueries({ queryKey: ["afiliado-saques"] });
       toast({ title: status === "pago" ? "Saque pago ✅" : "Saque rejeitado" });
     },
     onError: () => {
@@ -76,6 +88,10 @@ const AdminWithdrawals = () => {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["admin-saques"] });
+      queryClient.invalidateQueries({ queryKey: ["admin-afiliado-saques"] });
+      queryClient.invalidateQueries({ queryKey: ["admin-afiliado-saques-all"] });
+      queryClient.invalidateQueries({ queryKey: ["affiliate-saques-dash"] });
+      queryClient.invalidateQueries({ queryKey: ["afiliado-saques"] });
       toast({ title: "Saque excluído com sucesso" });
     },
     onError: () => {
@@ -96,9 +112,11 @@ const AdminWithdrawals = () => {
   const totalPendente = pendentes.reduce((sum: number, s: any) => sum + Number(s.valor), 0);
   const totalPago = saques.filter((s: any) => s.status === "pago").reduce((sum: number, s: any) => sum + Number(s.valor), 0);
 
-  const totalComissoesPendentes = comissoesPendentes.reduce((sum: number, c: any) => sum + Number(c.valor_comissao), 0);
+  const totalComissoesPendentes = unpaidAffiliateCommissions(comissoes, saques);
 
-  if (isLoading) {
+  if (saquesError || comissoesError) return <p role="alert">Não foi possível consultar os saques. Atualize a página.</p>;
+
+  if (isLoading || loadingComissoes) {
     return (
       <div className="flex justify-center py-12">
         <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
@@ -111,7 +129,7 @@ const AdminWithdrawals = () => {
       {/* Summary */}
       <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
         {[
-          { label: "Comissão Pendente", value: formatCurrency(totalComissoesPendentes), icon: Wallet, accent: "bg-orange-100 text-orange-600", sub: `${comissoesPendentes.length} comissão(ões)` },
+          { label: "Comissão Pendente", value: formatCurrency(totalComissoesPendentes), icon: Wallet, accent: "bg-orange-100 text-orange-600", sub: "Ganhos menos saques pagos" },
           { label: "Saques Pendentes", value: String(pendentes.length), icon: Clock, accent: "bg-yellow-100 text-yellow-600" },
           { label: "Total Pendente", value: formatCurrency(totalPendente), icon: DollarSign, accent: "bg-primary/10 text-primary" },
           { label: "Total Processados", value: String(processados.length), icon: CheckCircle2, accent: "bg-green-100 text-green-600" },

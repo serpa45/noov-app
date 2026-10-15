@@ -1,6 +1,7 @@
+import { affiliateBalance, affiliateTotals, unpaidAffiliateCommissions } from "@/utils/affiliateBalance";
 import { useState } from "react";
 import { motion } from "framer-motion";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -23,7 +24,6 @@ import {
   Hash,
   Mail,
   Phone,
-  CheckCircle2,
   Wallet,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
@@ -31,18 +31,18 @@ import { useToast } from "@/hooks/use-toast";
 const AdminAffiliates = () => {
   const navigate = useNavigate();
   const { toast } = useToast();
-  const queryClient = useQueryClient();
   const [selectedAfiliado, setSelectedAfiliado] = useState<any>(null);
 
   // Fetch all profiles with codigo_afiliado (affiliates)
   const { data: afiliados = [], isLoading } = useQuery({
     queryKey: ["admin-all-afiliados"],
     queryFn: async () => {
-      const { data } = await supabase
+      const { data, error } = await supabase
         .from("profiles")
         .select("*")
         .not("codigo_afiliado", "is", null)
         .order("full_name", { ascending: true });
+      if (error) throw error;
       return data ?? [];
     },
   });
@@ -51,10 +51,11 @@ const AdminAffiliates = () => {
   const { data: lojas = [] } = useQuery({
     queryKey: ["admin-afiliado-lojas"],
     queryFn: async () => {
-      const { data } = await supabase
+      const { data, error } = await supabase
         .from("lojas")
         .select("id, nome, slug, segmento, afiliado_id, created_at")
         .not("afiliado_id", "is", null);
+      if (error) throw error;
       return data ?? [];
     },
   });
@@ -63,43 +64,30 @@ const AdminAffiliates = () => {
   const { data: lojaPlanos = [] } = useQuery({
     queryKey: ["admin-afiliado-loja-planos"],
     queryFn: async () => {
-      const { data } = await supabase.from("loja_planos").select("loja_id, ativo, preco_assinado");
+      const { data, error } = await supabase.from("loja_planos").select("loja_id, ativo, preco_assinado");
+      if (error) throw error;
       return data ?? [];
     },
   });
 
   // Fetch all commissions
-  const { data: comissoes = [] } = useQuery({
+  const { data: comissoes = [], isLoading: loadingComissoes, isError: errorComissoes } = useQuery({
     queryKey: ["admin-afiliado-comissoes"],
     queryFn: async () => {
-      const { data } = await supabase.from("comissoes").select("*");
+      const { data, error } = await supabase.from("comissoes").select("*");
+      if (error) throw error;
       return data ?? [];
     },
   });
 
   // Fetch all withdrawals
-  const { data: saques = [] } = useQuery({
+  const { data: saques = [], isLoading: loadingSaques, isError: errorSaques } = useQuery({
     queryKey: ["admin-afiliado-saques-all"],
+    refetchInterval: 15000,
     queryFn: async () => {
-      const { data } = await supabase.from("saques").select("*");
-      return data ?? [];
-    },
-  });
-
-  const markAsPaid = useMutation({
-    mutationFn: async (comissaoId: string) => {
-      const { error } = await supabase
-        .from("comissoes")
-        .update({ status: "pago", pago_em: new Date().toISOString() })
-        .eq("id", comissaoId);
+      const { data, error } = await supabase.from("saques").select("*");
       if (error) throw error;
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["admin-afiliado-comissoes"] });
-      toast({ title: "Comissão marcada como paga ✅" });
-    },
-    onError: () => {
-      toast({ title: "Erro ao atualizar comissão", variant: "destructive" });
+      return data ?? [];
     },
   });
 
@@ -123,9 +111,7 @@ const AdminAffiliates = () => {
     saques.filter((s: any) => s.afiliado_id === userId);
 
   const getSaldoDisponivel = (userId: string) => {
-    const totalComissoes = getAfiliadoComissoes(userId).reduce((s: number, c: any) => s + Number(c.valor_comissao), 0);
-    const totalSaquesPagos = getAfiliadoSaques(userId).filter((s: any) => s.status === "pago").reduce((s: number, sq: any) => s + Number(sq.valor), 0);
-    return totalComissoes - totalSaquesPagos;
+    return affiliateBalance(getAfiliadoComissoes(userId), getAfiliadoSaques(userId));
   };
 
   const getShareLink = (codigo: string) =>
@@ -136,7 +122,9 @@ const AdminAffiliates = () => {
     toast({ title: "Copiado!", description: "Link copiado para a área de transferência." });
   };
 
-  if (isLoading) {
+  if (errorComissoes || errorSaques) return <p role="alert">Falha ao consultar os ganhos e saques. Atualize a tela.</p>;
+
+  if (isLoading || loadingComissoes || loadingSaques) {
     return (
       <div className="flex justify-center py-12">
         <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
@@ -146,9 +134,8 @@ const AdminAffiliates = () => {
 
   // Global stats
   const totalComissoes = comissoes.reduce((sum: number, c: any) => sum + Number(c.valor_comissao), 0);
-  const comissoesPagas = comissoes.filter((c: any) => c.status === "pago");
-  const totalPago = comissoesPagas.reduce((sum: number, c: any) => sum + Number(c.valor_comissao), 0);
-  const totalPendente = totalComissoes - totalPago;
+  const totalPago = affiliateTotals(comissoes, saques).paid;
+  const totalPendente = unpaidAffiliateCommissions(comissoes, saques);
   const saquesSolicitadosList = saques.filter((s: any) => s.status === "pendente" || s.status === "solicitado");
   const totalSaquesSolicitados = saquesSolicitadosList.reduce((sum: number, s: any) => sum + Number(s.valor || 0), 0);
 
@@ -159,7 +146,7 @@ const AdminAffiliates = () => {
         {[
           { label: "Afiliados", value: String(afiliados.length), icon: Users, color: "text-primary" },
           { label: "Lojas Indicadas", value: String(lojas.length), icon: Store, color: "text-secondary" },
-          { label: "Pendente de Saque", value: formatCurrency(totalPendente), icon: DollarSign, color: "text-yellow-600" },
+          { label: "Comissões a Pagar", value: formatCurrency(totalPendente), icon: DollarSign, color: "text-yellow-600" },
           { label: "Saques Solicitados", value: formatCurrency(totalSaquesSolicitados), icon: Wallet, color: "text-orange-600" },
           { label: "Comissões Pagas", value: formatCurrency(totalPago), icon: DollarSign, color: "text-green-600" },
         ].map((stat, i) => (
@@ -274,7 +261,7 @@ const AdminAffiliates = () => {
               formatCurrency={formatCurrency}
               formatDate={formatDate}
               onCopy={copyToClipboard}
-              onMarkPaid={(id) => markAsPaid.mutate(id)}
+              saques={getAfiliadoSaques(selectedAfiliado.user_id)}
             />
           )}
         </DialogContent>
@@ -291,7 +278,7 @@ const AfiliadoDetail = ({
   formatCurrency,
   formatDate,
   onCopy,
-  onMarkPaid,
+  saques,
 }: {
   afiliado: any;
   lojas: any[];
@@ -300,11 +287,11 @@ const AfiliadoDetail = ({
   formatCurrency: (v: number) => string;
   formatDate: (d: string) => string;
   onCopy: (text: string) => void;
-  onMarkPaid: (comissaoId: string) => void;
+  saques: { valor: number | string; status: string }[];
 }) => {
   const totalGanho = comissoes.reduce((s, c) => s + Number(c.valor_comissao), 0);
-  const totalPago = comissoes.filter((c) => c.status === "pago").reduce((s, c) => s + Number(c.valor_comissao), 0);
-  const totalPendente = totalGanho - totalPago;
+  const totalPago = affiliateTotals(comissoes, saques).paid;
+  const totalPendente = affiliateTotals(comissoes, saques).unpaid;
 
   return (
     <>
@@ -399,20 +386,7 @@ const AfiliadoDetail = ({
                       {c.percentual}% de {formatCurrency(c.valor_pedido)} · {formatDate(c.created_at)}
                     </p>
                   </div>
-                  {c.status === "pago" ? (
-                    <Badge variant="outline" className="text-[10px] text-green-700 border-green-200 shrink-0">
-                      <CheckCircle2 className="w-3 h-3 mr-1" /> Pago
-                    </Badge>
-                  ) : (
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      className="text-[10px] h-7 shrink-0 text-green-700 border-green-200 hover:bg-green-50"
-                      onClick={() => onMarkPaid(c.id)}
-                    >
-                      <CheckCircle2 className="w-3 h-3 mr-1" /> Marcar pago
-                    </Button>
-                  )}
+                  <Badge variant="outline">Registrada</Badge>
                 </div>
               ))}
             </div>

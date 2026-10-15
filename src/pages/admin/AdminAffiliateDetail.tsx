@@ -1,3 +1,4 @@
+import { affiliateBalance, affiliateTotals } from "@/utils/affiliateBalance";
 import { useMemo, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
@@ -12,7 +13,7 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
 import { motion } from "framer-motion";
 import {
   Users, Loader2, Copy, Link2, Store, DollarSign, Hash, Mail, Phone,
-  CheckCircle2, ArrowLeft, Percent, TrendingUp, KeyRound, Pencil, Trash2, Wallet, Calendar,
+  ArrowLeft, Percent, TrendingUp, KeyRound, Pencil, Trash2, Wallet, Calendar,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 
@@ -25,7 +26,7 @@ const AdminAffiliateDetail = () => {
   const { data: afiliado, isLoading: loadingProfile } = useQuery({
     queryKey: ["admin-afiliado-detail", id],
     queryFn: async () => {
-      const { data } = await supabase
+      const { data, error } = await supabase
         .from("profiles")
         .select("*")
         .eq("user_id", id)
@@ -38,10 +39,11 @@ const AdminAffiliateDetail = () => {
   const { data: lojas = [], isLoading: loadingLojas } = useQuery({
     queryKey: ["admin-afiliado-lojas", id],
     queryFn: async () => {
-      const { data } = await supabase
+      const { data, error } = await supabase
         .from("lojas")
         .select("id, nome, slug, segmento, created_at, ativo")
         .eq("afiliado_id", id!);
+      if (error) throw error;
       return data ?? [];
     },
     enabled: !!id,
@@ -52,24 +54,26 @@ const AdminAffiliateDetail = () => {
     queryFn: async () => {
       const lojaIds = lojas.map((l: any) => l.id);
       if (lojaIds.length === 0) return [];
-      const { data } = await supabase
+      const { data, error } = await supabase
         .from("loja_planos")
         .select("loja_id, preco_assinado, ativo, planos(nome)")
         .in("loja_id", lojaIds)
         .eq("ativo", true);
+      if (error) throw error;
       return data ?? [];
     },
     enabled: lojas.length > 0,
   });
 
-  const { data: comissoes = [], isLoading: loadingComissoes } = useQuery({
+  const { data: comissoes = [], isLoading: loadingComissoes, isError: errorComissoes } = useQuery({
     queryKey: ["admin-afiliado-comissoes", id],
     queryFn: async () => {
-      const { data } = await supabase
+      const { data, error } = await supabase
         .from("comissoes")
         .select("*")
         .eq("afiliado_id", id!)
         .order("created_at", { ascending: false });
+      if (error) throw error;
       return data ?? [];
     },
     enabled: !!id,
@@ -78,7 +82,7 @@ const AdminAffiliateDetail = () => {
   const { data: globalComissaoConfig } = useQuery({
     queryKey: ["config-global", "comissao_afiliado_percent"],
     queryFn: async () => {
-      const { data } = await supabase
+      const { data, error } = await supabase
         .from("configuracoes_globais")
         .select("valor")
         .eq("chave", "comissao_afiliado_percent")
@@ -87,35 +91,22 @@ const AdminAffiliateDetail = () => {
     },
   });
 
-  const { data: saques = [], isLoading: loadingSaques } = useQuery({
+  const { data: saques = [], isLoading: loadingSaques, isError: errorSaques } = useQuery({
     queryKey: ["admin-afiliado-saques", id],
+    refetchInterval: 15000,
     queryFn: async () => {
-      const { data } = await supabase
+      const { data, error } = await supabase
         .from("saques")
         .select("*")
         .eq("afiliado_id", id!)
         .order("created_at", { ascending: false });
+      if (error) throw error;
       return data ?? [];
     },
     enabled: !!id,
   });
 
-  const markAsPaid = useMutation({
-    mutationFn: async (comissaoId: string) => {
-      const { error } = await supabase
-        .from("comissoes")
-        .update({ status: "pago", pago_em: new Date().toISOString() })
-        .eq("id", comissaoId);
-      if (error) throw error;
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["admin-afiliado-comissoes", id] });
-      toast({ title: "Comissão marcada como paga ✅" });
-    },
-    onError: () => {
-      toast({ title: "Erro ao atualizar comissão", variant: "destructive" });
-    },
-  });
+
 
   const [editOpen, setEditOpen] = useState(false);
   const [editForm, setEditForm] = useState({ full_name: "", email: "", phone: "", pix_tipo: "", pix_chave: "", pix_nome_favorecido: "", percentual: "10" });
@@ -135,9 +126,9 @@ const AdminAffiliateDetail = () => {
     const total = comissoes.reduce((s: number, c: any) => s + Number(c.valor_comissao), 0);
     const percentual = effectiveComissaoPercent;
     const totalSaquesAprovados = saques.filter((s: any) => s.status === "pago").reduce((sum: number, s: any) => sum + Number(s.valor), 0);
-    const saldoDisponivel = total - totalSaquesAprovados;
+    const saldoDisponivel = affiliateBalance(comissoes, saques);
     const pago = totalSaquesAprovados;
-    const pendente = total - pago;
+    const pendente = affiliateTotals(comissoes, saques).unpaid;
     return { total, pago, pendente, percentual, saldoDisponivel, totalSaquesAprovados };
   }, [comissoes, saques, effectiveComissaoPercent]);
 
@@ -207,6 +198,8 @@ const AdminAffiliateDetail = () => {
     },
     onError: () => toast({ title: "Erro ao excluir", variant: "destructive" }),
   });
+
+  if (errorComissoes || errorSaques) return <p role="alert">Falha ao consultar os ganhos e saques. Atualize a tela.</p>;
 
   if (isLoading) {
     return (
@@ -424,6 +417,7 @@ const AdminAffiliateDetail = () => {
         <Card className="border-border/50 shadow-card">
           <CardHeader className="pb-2">
             <CardTitle className="text-base font-display">Comissões ({comissoes.length})</CardTitle>
+            <Button variant="link" onClick={() => navigate("/admin/saques")}>Consultar e confirmar pagamentos em Saques</Button>
           </CardHeader>
           <CardContent>
             {comissoes.length === 0 ? (
@@ -438,21 +432,7 @@ const AdminAffiliateDetail = () => {
                         {c.percentual}% de {formatCurrency(Number(c.valor_pedido))} · {formatDate(c.created_at)}
                       </p>
                     </div>
-                    {c.status === "pago" ? (
-                      <Badge variant="outline" className="text-[10px] text-green-700 border-green-200 shrink-0">
-                        <CheckCircle2 className="w-3 h-3 mr-1" /> Pago
-                        {c.pago_em && <span className="ml-1">· {formatDate(c.pago_em)}</span>}
-                      </Badge>
-                    ) : (
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        className="text-[10px] h-7 shrink-0 text-green-700 border-green-200 hover:bg-green-50"
-                        onClick={() => markAsPaid.mutate(c.id)}
-                      >
-                        <CheckCircle2 className="w-3 h-3 mr-1" /> Marcar pago
-                      </Button>
-                    )}
+                    <Badge variant="outline">Registrada</Badge>
                   </div>
                 ))}
               </div>
