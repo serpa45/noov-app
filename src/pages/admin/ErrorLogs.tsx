@@ -1,4 +1,7 @@
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { errorLogKeys, fetchErrorLogs } from "@/utils/errorLogQueries";
+import { useRealtimeSubscription } from "@/hooks/useRealtimeSubscription";
+import { errorMessage } from "@/utils/errorLogger";
 import { supabase } from "@/integrations/supabase/client";
 import { 
   Card, 
@@ -25,6 +28,8 @@ import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
 
 const ErrorLogs = () => {
+  const queryClient = useQueryClient();
+  useRealtimeSubscription("error_logs", [ [...errorLogKeys.list], [...errorLogKeys.count] ]);
   const [searchTerm, setSearchTerm] = useState("");
   const [isPaused, setIsPaused] = useState(() => {
     if (typeof window === "undefined") return false;
@@ -36,23 +41,9 @@ const ErrorLogs = () => {
     window.localStorage.setItem("admin-error-logs-paused", String(isPaused));
   }, [isPaused]);
 
-  const { data: logs = [], isLoading, refetch } = useQuery({
-    queryKey: ["admin-error-logs"],
-    queryFn: async () => {
-      // Cast to any to bypass type issues until regeneration
-      const { data, error } = await (supabase as any)
-        .from("error_logs")
-        .select(`
-          *,
-          lojas (
-            nome_fantasia
-          )
-        `)
-        .order("created_at", { ascending: false });
-
-      if (error) throw error;
-      return data;
-    },
+  const { data: logs = [], isLoading, isError, error: loadError, refetch } = useQuery({
+    queryKey: errorLogKeys.list,
+    queryFn: fetchErrorLogs,
     refetchInterval: isPaused ? false : 30000,
   });
 
@@ -68,13 +59,14 @@ const ErrorLogs = () => {
       toast.error("Erro ao limpar logs");
     } else {
       toast.success("Logs limpos com sucesso");
-      refetch();
+      queryClient.invalidateQueries({ queryKey: errorLogKeys.list });
+      queryClient.invalidateQueries({ queryKey: errorLogKeys.count });
     }
   };
 
   const filteredLogs = logs.filter((log: any) => 
     log.message?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    log.lojas?.nome_fantasia?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    log.lojas?.nome?.toLowerCase().includes(searchTerm.toLowerCase()) ||
     log.url?.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
@@ -84,12 +76,12 @@ const ErrorLogs = () => {
           <div>
             <h1 className="text-2xl font-bold flex items-center gap-2">
               <Terminal className="w-6 h-6 text-destructive" />
-              Logs de Erros do Catálogo
+              Logs de Erros do Sistema
             </h1>
             <p className="text-muted-foreground">
               {isPaused
                 ? "Atualização automática pausada. Clique em Retomar para voltar a sincronizar."
-                : "Monitoramento de erros em tempo real no cardápio público."}
+                : "Erros do aplicativo registrados no Supabase do Noov."}
             </p>
           </div>
           <div className="flex items-center gap-2">
@@ -124,7 +116,7 @@ const ErrorLogs = () => {
             </div>
           </div>
           <CardDescription>
-            Logs capturados desde o acesso ao catálogo até a finalização do pedido.
+            Últimas 200 ocorrências. Expanda os detalhes para investigar cada erro.
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -140,7 +132,15 @@ const ErrorLogs = () => {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {isLoading ? (
+                {isError ? (
+                  <TableRow><TableCell colSpan={5}>
+                    <div role="alert" className="py-6 text-destructive">
+                      <p>Não foi possível carregar os logs do Supabase.</p>
+                      <p className="text-sm">{errorMessage(loadError)}</p>
+                      <Button variant="outline" onClick={() => refetch()}>Tentar novamente</Button>
+                    </div>
+                  </TableCell></TableRow>
+                ) : isLoading ? (
                   <TableRow>
                     <TableCell colSpan={5} className="text-center py-10">
                       Carregando logs...
@@ -149,7 +149,7 @@ const ErrorLogs = () => {
                 ) : filteredLogs.length === 0 ? (
                   <TableRow>
                     <TableCell colSpan={5} className="text-center py-10 text-muted-foreground">
-                      Nenhum erro registrado.
+                      {searchTerm ? "Nenhuma ocorrência corresponde à busca." : "Nenhum erro registrado."}
                     </TableCell>
                   </TableRow>
                 ) : (
@@ -159,16 +159,16 @@ const ErrorLogs = () => {
                         {format(new Date(log.created_at), "dd/MM/yy HH:mm:ss", { locale: ptBR })}
                       </TableCell>
                       <TableCell className="font-medium">
-                        {log.lojas?.nome_fantasia || "N/A"}
+                        {log.lojas?.nome || "Sistema / sem loja"}
                       </TableCell>
                       <TableCell className="max-w-md">
                         <div className="flex flex-col gap-1">
-                          <span className="font-semibold text-destructive line-clamp-1">{log.message}</span>
-                          {log.stack && (
-                            <pre className="text-[10px] bg-muted p-2 rounded hidden group-hover:block overflow-x-auto max-h-32">
-                              {log.stack}
+                          <span className="font-semibold text-destructive break-words">{log.message}</span>
+                          <details><summary className="text-xs cursor-pointer">Detalhes técnicos</summary>
+                            <pre className="text-xs bg-muted p-2 rounded overflow-auto max-h-64 whitespace-pre-wrap">
+                              {log.stack || "Sem stack trace."}{"\n"}{JSON.stringify(log.metadata, null, 2)}
                             </pre>
-                          )}
+                          </details>
                         </div>
                       </TableCell>
                       <TableCell className="max-w-[200px] truncate text-xs text-muted-foreground">

@@ -1,4 +1,5 @@
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { QueryClient, QueryClientProvider, QueryCache, MutationCache } from "@tanstack/react-query";
+import { reportAppError } from "./utils/errorLogger";
 import { BrowserRouter, Route, Routes, Outlet, Navigate } from "react-router-dom";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { Toaster } from "@/components/ui/toaster";
@@ -105,7 +106,10 @@ import { DemoProvider } from "./contexts/DemoContext.tsx";
 import OrderTracking from "./pages/OrderTracking.tsx";
 import { AppDownloadPopup } from "./components/AppDownloadPopup";
 
-const queryClient = new QueryClient();
+const queryClient = new QueryClient({
+  queryCache: new QueryCache({ onError: (error, query) => reportAppError(error, "query_error", String(query.queryKey[0] ?? "query")) }),
+  mutationCache: new MutationCache({ onError: (error) => reportAppError(error, "mutation_error") }),
+});
 
 import { useOnlineTracking } from "./hooks/useOnlineTracking";
 import { useEffect } from "react";

@@ -10,7 +10,7 @@ import { jsPDF } from "jspdf";
 
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
-import { setupGlobalErrorLogging } from "@/utils/errorLogger";
+import { setErrorLoggingContext } from "@/utils/errorLogger";
 import { formatPhone, maskPhoneInput } from "@/lib/utils";
 import { motion, AnimatePresence } from "framer-motion";
 import {
@@ -740,7 +740,7 @@ const StoreMenu = () => {
 
   useEffect(() => {
     if (store?.id) {
-      return setupGlobalErrorLogging(store.id);
+      return setErrorLoggingContext({ storeId: store.id });
     }
   }, [store?.id]);
 

@@ -23,6 +23,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useEffect } from "react";
+import { countErrorLogs, errorLogKeys } from "@/utils/errorLogQueries";
 import {
   Sidebar,
   SidebarContent,
@@ -111,14 +112,8 @@ export function AdminSidebar() {
   });
 
   const { data: errorCount = 0 } = useQuery({
-    queryKey: ["admin-error-logs-count"],
-    queryFn: async () => {
-      const { count, error } = await supabase
-        .from("error_logs" as any)
-        .select("*", { count: "exact", head: true });
-      if (error) return 0;
-      return count ?? 0;
-    },
+    queryKey: errorLogKeys.count,
+    queryFn: countErrorLogs,
     refetchInterval: 30000,
   });
 
@@ -139,8 +134,9 @@ export function AdminSidebar() {
 
     const channelErrors = supabase
       .channel("admin-sidebar-errors-count")
-      .on("postgres_changes", { event: "INSERT", schema: "public", table: "error_logs" }, () => {
+      .on("postgres_changes", { event: "*", schema: "public", table: "error_logs" }, () => {
         queryClient.invalidateQueries({ queryKey: ["admin-error-logs-count"] });
+        queryClient.invalidateQueries({ queryKey: errorLogKeys.list });
       })
       .subscribe();
 

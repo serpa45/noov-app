@@ -23,11 +23,12 @@ import {
   Trash2,
   RefreshCw,
   X,
-  CreditCard,
-  Zap,
   Terminal,
   Pause,
   Play,
+  Table2,
+  Package,
+  ShoppingBag,
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -69,6 +70,53 @@ import { formatDistanceToNow, differenceInMinutes, format } from "date-fns";
 import { ptBR } from "date-fns/locale";
 
 import { toast } from "sonner";
+import { errorMessage } from "@/utils/errorLogger";
+
+type SystemUsage = {
+  generated_at?: string;
+  database: {
+    size_bytes: number | null;
+    size_pretty: string | null;
+    tables: number;
+    rows: number;
+    columns: number;
+    top_tables: Array<{
+      name: string;
+      rows: number;
+      size_bytes: number | null;
+      size_pretty: string | null;
+    }>;
+  };
+  storage: {
+    total_bytes: number;
+    file_count: number;
+    by_bucket: Array<{ bucket: string; files: number; bytes: number }>;
+    by_loja: Array<{ nome: string; files: number; bytes: number }>;
+  };
+  counts: {
+    auth_users: number;
+    lojas: number;
+    lojas_ativas: number;
+    produtos: number;
+    pedidos: number;
+    pedidos_hoje: number;
+    clientes: number;
+  };
+  activity: Array<{ dia: string; date?: string; pedidos: number; acessos: number }>;
+};
+
+const STORAGE_LIMIT_BYTES = 1 * 1024 * 1024 * 1024; // referência plano Free (1 GB)
+const DB_LIMIT_BYTES = 500 * 1024 * 1024; // referência plano Free (500 MB)
+
+const formatBytes = (bytes: number | null | undefined) => {
+  if (bytes == null || Number.isNaN(bytes)) return "—";
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  if (bytes < 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  return `${(bytes / (1024 * 1024 * 1024)).toFixed(2)} GB`;
+};
+
+const bytesToMB = (bytes: number) => Math.round((bytes / (1024 * 1024)) * 100) / 100;
 
 const SystemMetrics = () => {
   const [showAllLojistas, setShowAllLojistas] = useState(false);
@@ -150,12 +198,12 @@ const SystemMetrics = () => {
     queryFn: async () => {
       const { data, error } = await supabase
         .from("online_users")
-        .select("*, profiles:user_id(full_name)")
+        .select("*")
         .order("last_seen_at", { ascending: false });
       if (error) throw error;
       return data.map((user: any) => ({
         ...user,
-        user_name: user.profiles?.full_name || user.user_name || "Visitante Anônimo"
+        user_name: user.user_name || "Visitante Anônimo"
       }));
     },
     refetchInterval: isPaused ? false : 30000, // Fallback polling every 30s
@@ -184,58 +232,61 @@ const SystemMetrics = () => {
     return isToday && isOffline;
   });
 
+  // Fetch system-wide metrics from Supabase (RPC get_system_usage)
+  const { data: usage, isLoading: loadingUsage, isError: usageFailed, error: usageError, refetch: refetchUsage } = useQuery({
+    queryKey: ["supabase-system-usage"],
+    queryFn: async (): Promise<SystemUsage> => {
+      const { data, error } = await (supabase as any).rpc("get_system_usage");
+      if (!error && data) return data as SystemUsage;
+
+      // Fallback: edge function (service role + admin check)
+      const { data: fnData, error: fnError } = await supabase.functions.invoke("system-metrics");
+      if (fnError) throw fnError;
+      if (fnData?.error) throw new Error(fnData.error);
+      if (!fnData?.database || !fnData?.storage || !fnData?.counts) throw new Error("Resposta de métricas inválida do Supabase.");
+      return fnData as SystemUsage;
+    },
+    refetchInterval: isPaused ? false : 60000,
+  });
+
   // Fetch system-wide metrics
-  const { data: metrics, isLoading } = useQuery({
-    queryKey: ["admin-system-metrics"],
+  const { data: metrics, isLoading, isError: metricsFailed, error: metricsError } = useQuery({
+    queryKey: ["admin-system-metrics", usage?.generated_at],
+    enabled: !!usage,
     queryFn: async () => {
-      // Get count of active stores (the real "Lojistas Ativos")
-      const { count: activeLojasCount, data: activeLojasData } = await supabase
+      const { count: activeLojasCount, data: activeLojasData, error } = await supabase
         .from("lojas")
         .select("id, nome, logo_url, slug, created_at", { count: "exact" })
         .eq("ativo", true);
-        
-      const { data: lojasData } = await supabase
-        .from("lojas")
-        .select(`
-          id,
-          nome,
-          produtos (
-            id,
-            imagem_url
-          )
-        `);
+      if (error) throw error;
 
-      const { data: dbStats } = await supabase.rpc('get_db_stats');
-      const { data: columnStats } = await supabase.rpc('get_column_stats');
+      const lojistasStorage = (usage?.storage.by_loja || []).map((loja) => ({
+        nome: loja.nome || "Loja sem nome",
+        usage: bytesToMB(Number(loja.bytes || 0)),
+        files: Number(loja.files || 0),
+      }));
 
-      const lojistasStorage = (lojasData || []).map(loja => {
-        const productWithImages = (loja.produtos as any[])?.filter(p => p.imagem_url).length || 0;
-        const usage = (productWithImages * 0.8) + 5.2; 
-        return {
-          nome: loja.nome || "Loja sem nome",
-          usage: parseFloat(usage.toFixed(2))
-        };
-      }).sort((a, b) => b.usage - a.usage);
-
-      const totalUsage = lojistasStorage.reduce((acc, curr) => acc + curr.usage, 0);
+      const totalUsageMB = bytesToMB(Number(usage?.storage.total_bytes || 0));
 
       return {
         storage: {
-          totalUsageMB: parseFloat(totalUsage.toFixed(2)),
-          totalLimitMB: 5120, // 5GB
-          lojistas: lojistasStorage
+          totalUsageMB,
+          totalLimitMB: bytesToMB(STORAGE_LIMIT_BYTES),
+          lojistas: lojistasStorage,
         },
         counts: {
-          lojistas: activeLojasCount || 0,
-          activeLojas: activeLojasData || []
+          lojistas: activeLojasCount || usage?.counts.lojas_ativas || 0,
+          activeLojas: activeLojasData || [],
         },
         database: {
-          tables: dbStats?.length || 0,
-          rows: dbStats?.reduce((acc: number, curr: any) => acc + (curr.row_count || 0), 0) || 0,
-          columns: columnStats?.reduce((acc: number, curr: any) => acc + (curr.column_count || 0), 0) || 0
-        }
+          tables: usage?.database.tables || 0,
+          rows: usage?.database.rows || 0,
+          columns: usage?.database.columns || 0,
+          sizeBytes: usage?.database.size_bytes || 0,
+          sizePretty: usage?.database.size_pretty || formatBytes(usage?.database.size_bytes),
+        },
       };
-    }
+    },
   });
 
   // Access logs — today (all visitors + area entered)
@@ -282,61 +333,6 @@ const SystemMetrics = () => {
       }));
     },
     refetchInterval: isPaused ? false : 60000,
-  });
-
-  // Fetch Lovable Cloud Credits — valores reais sincronizados do workspace Lovable
-  const { data: creditStats, isLoading: loadingCredits } = useQuery({
-    queryKey: ["lovable-cloud-credits"],
-    queryFn: async () => {
-      return {
-        cloud: {
-          used: 6.84, // Simulação de valor atualizado
-          total: 25.00,
-          usedPercentage: (6.84 / 25.00) * 100,
-          rechargesUsed: 0
-        },
-        ia: {
-          used: 0.12, // Simulação de valor atualizado
-          total: 1.00,
-          usedPercentage: 12,
-          rechargesUsed: 0
-        },
-        credits: {
-          remaining: 22.08,
-          total: 95.00,
-          used: 22.67,
-          usedPercentage: (22.67 / 95.00) * 100,
-          dailyRemaining: 4.80,
-          dailyTotal: 5.00
-        },
-        // Consumo diário real (créditos) — últimos 7 dias
-        historico: [
-          { dia: "29/07", cloud: 0.10, build: 0, total: 0.10 },
-          { dia: "30/07", cloud: 0.05, build: 0, total: 0.05 },
-          { dia: "31/07", cloud: 0.20, build: 0, total: 0.20 },
-          { dia: "01/08", cloud: 3.92, build: 0, total: 3.92 },
-          { dia: "02/08", cloud: 4.05, build: 0, total: 4.05 },
-          { dia: "03/08", cloud: 3.80, build: 0, total: 3.80 },
-          { dia: "04/08", cloud: 6.84, build: 0, total: 6.84 },
-        ],
-        // Para onde vão os créditos do Cloud (período atual)
-        breakdown: [
-          { item: "Compute Tiny", valor: 17.946180847 },
-          { item: "Mensagens (Build)", valor: 15.00 },
-          { item: "Banco de Dados (Cloud)", valor: 2.15 }, // Valor simulado um pouco maior para representar consumo diário
-          { item: "Inteligência Artificial (IA)", valor: 0.12 },
-          { item: "Egress em cache", valor: 0.252785752 },
-          { item: "Egress", valor: 0.077451417 },
-          { item: "Storage do banco", valor: 0.04915224 },
-          { item: "Compute pico", valor: 0.0235144 },
-          { item: "Realtime", valor: 0.02197 },
-          { item: "Worker Days", valor: 0.008 },
-          { item: "Storage de arquivos", valor: 0.005248276 },
-          { item: "Edge Functions", valor: 0.00068 },
-        ],
-      };
-    },
-    refetchInterval: isPaused ? false : 10000, // Sync every 10s for "online/sync" feel
   });
 
 
@@ -395,7 +391,19 @@ const SystemMetrics = () => {
     };
   })();
 
-  if (isLoading) {
+  if (usageFailed || metricsFailed) {
+    const error = usageError || metricsError;
+    return <div role="alert" className="p-6 space-y-3">
+      <h1 className="text-xl font-bold">Não foi possível consultar as métricas do Supabase.</h1>
+      <p>{errorMessage(error)}</p>
+      <Button onClick={() => {
+        refetchUsage();
+        queryClient.invalidateQueries({ queryKey: ["admin-system-metrics"] });
+      }}>Tentar novamente</Button>
+    </div>;
+  }
+
+  if (isLoading || loadingUsage || !metrics || !usage) {
     return (
       <div className="flex flex-col items-center justify-center py-20 gap-4">
         <Loader2 className="w-8 h-8 animate-spin text-primary" />
@@ -404,9 +412,25 @@ const SystemMetrics = () => {
     );
   }
 
-  const storagePercentage = (metrics!.storage.totalUsageMB / metrics!.storage.totalLimitMB) * 100;
-  const availableStorageMB = metrics!.storage.totalLimitMB - metrics!.storage.totalUsageMB;
+  const storagePercentage = Math.min(
+    100,
+    (Number(usage.storage.total_bytes || 0) / STORAGE_LIMIT_BYTES) * 100
+  );
+  const dbPercentage = Math.min(
+    100,
+    (Number(usage.database.size_bytes || 0) / DB_LIMIT_BYTES) * 100
+  );
   const COLORS = ['#8B5CF6', '#D946EF', '#F97316', '#0EA5E9', '#10B981'];
+
+  const activityData = usage.activity || [];
+  const bucketBreakdown = (usage.storage.by_bucket || []).map((b) => ({
+    item: b.bucket,
+    valor: bytesToMB(Number(b.bytes || 0)),
+    files: Number(b.files || 0),
+  }));
+  const topTables = usage.database.top_tables || [];
+  const totalPedidos7d = activityData.reduce((s, d) => s + Number(d.pedidos || 0), 0);
+  const totalAcessos7d = activityData.reduce((s, d) => s + Number(d.acessos || 0), 0);
 
   const filteredOnlineUsers = onlineUsers.filter(u => 
     u.user_name?.toLowerCase().includes(userSearch.toLowerCase()) ||
@@ -514,7 +538,7 @@ const SystemMetrics = () => {
                 <Activity className="w-8 h-8 text-primary" />
                 Métricas do Sistema
               </h1>
-              <p className="text-muted-foreground font-medium">O que está consumindo crédito todos os dias do cloud?</p>
+              <p className="text-muted-foreground font-medium">Uso real do banco, storage e atividade no Supabase</p>
             </div>
             <div className="flex items-center gap-2">
               <Button
@@ -538,101 +562,115 @@ const SystemMetrics = () => {
               <div className={`flex items-center gap-2 px-3 py-1.5 rounded-full shadow-sm ${isPaused ? 'bg-muted border border-border' : 'bg-primary/5 border border-primary/20 animate-pulse'}`}>
                 <RefreshCw className={`w-3.5 h-3.5 ${isPaused ? 'text-muted-foreground' : 'text-primary'}`} />
                 <span className={`text-[10px] font-bold uppercase tracking-tighter ${isPaused ? 'text-muted-foreground' : 'text-primary'}`}>
-                  {isPaused ? "Atualizações pausadas" : "Sincronizado com Lovable"}
+                  {isPaused ? "Atualizações pausadas" : "Sincronizado com Supabase"}
                 </span>
               </div>
             </div>
           </div>
         </motion.div>
 
-        {/* Cloud Credits Card */}
+        {/* Supabase Usage Overview */}
         <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}>
           <Card className="border-primary/20 bg-gradient-to-br from-primary/5 via-card to-background overflow-hidden relative group">
             <div className="absolute top-0 right-0 p-8 opacity-[0.03] group-hover:opacity-[0.06] transition-opacity">
-              <Cloud className="w-32 h-32 text-primary" />
+              <Database className="w-32 h-32 text-primary" />
             </div>
             <CardContent className="p-6">
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-                {/* Cloud Section */}
                 <div className="space-y-4">
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-3">
                       <div className="p-2 rounded-xl bg-primary/10">
-                        <Cloud className="w-5 h-5 text-primary" />
+                        <Database className="w-5 h-5 text-primary" />
                       </div>
                       <div>
-                        <h3 className="text-sm font-bold text-foreground flex items-center gap-1.5">
-                          Cloud
-                          <HelpCircle className="w-3.5 h-3.5 text-muted-foreground cursor-help" />
-                        </h3>
+                        <h3 className="text-sm font-bold text-foreground">Banco de Dados</h3>
+                        <p className="text-[10px] text-muted-foreground uppercase font-bold tracking-wider">PostgreSQL · Supabase</p>
                       </div>
                     </div>
                     <div className="text-right">
-                      <div className="text-sm font-black text-foreground">${creditStats?.cloud.used.toFixed(2)} / ${creditStats?.cloud.total}</div>
-                      <div className="text-[10px] font-bold text-muted-foreground uppercase leading-tight">Balanço livre utilizado</div>
-                    </div>
-                    <div className="text-right ml-4">
-                      <div className="text-sm font-black text-foreground">${creditStats?.cloud.rechargesUsed}</div>
-                      <div className="text-[10px] font-bold text-muted-foreground uppercase leading-tight">Recargas usadas</div>
+                      <div className="text-sm font-black text-foreground">
+                        {usage.database.size_pretty || formatBytes(usage.database.size_bytes)}
+                      </div>
+                      <div className="text-[10px] font-bold text-muted-foreground uppercase leading-tight">
+                        de {formatBytes(DB_LIMIT_BYTES)} (ref. Free)
+                      </div>
                     </div>
                   </div>
-                  <Progress value={creditStats?.cloud.usedPercentage} className="h-2 bg-primary/10" />
+                  <Progress value={dbPercentage} className="h-2 bg-primary/10" />
+                  <div className="grid grid-cols-3 gap-3 pt-1">
+                    <div>
+                      <div className="text-[10px] text-muted-foreground uppercase font-bold">Tabelas</div>
+                      <div className="text-lg font-black">{usage.database.tables}</div>
+                    </div>
+                    <div>
+                      <div className="text-[10px] text-muted-foreground uppercase font-bold">Linhas</div>
+                      <div className="text-lg font-black">{Number(usage.database.rows).toLocaleString("pt-BR")}</div>
+                    </div>
+                    <div>
+                      <div className="text-[10px] text-muted-foreground uppercase font-bold">Colunas</div>
+                      <div className="text-lg font-black">{Number(usage.database.columns).toLocaleString("pt-BR")}</div>
+                    </div>
+                  </div>
                 </div>
 
-                {/* IA Section */}
                 <div className="space-y-4 border-t lg:border-t-0 lg:border-l pt-4 lg:pt-0 lg:pl-8 border-primary/10">
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-3">
                       <div className="p-2 rounded-xl bg-orange-500/10">
-                        <Zap className="w-5 h-5 text-orange-500" />
+                        <HardDrive className="w-5 h-5 text-orange-500" />
                       </div>
                       <div>
-                        <h3 className="text-sm font-bold text-foreground flex items-center gap-1.5">
-                          IA
-                          <HelpCircle className="w-3.5 h-3.5 text-muted-foreground cursor-help" />
-                        </h3>
+                        <h3 className="text-sm font-bold text-foreground">Storage de Arquivos</h3>
+                        <p className="text-[10px] text-muted-foreground uppercase font-bold tracking-wider">
+                          {Number(usage.storage.file_count).toLocaleString("pt-BR")} arquivos
+                        </p>
                       </div>
                     </div>
                     <div className="text-right">
-                      <div className="text-sm font-black text-foreground">${creditStats?.ia.used.toFixed(2)} / ${creditStats?.ia.total}</div>
-                      <div className="text-[10px] font-bold text-muted-foreground uppercase leading-tight">Balanço livre utilizado</div>
-                    </div>
-                    <div className="text-right ml-4">
-                      <div className="text-sm font-black text-foreground">${creditStats?.ia.rechargesUsed}</div>
-                      <div className="text-[10px] font-bold text-muted-foreground uppercase leading-tight">Recargas usadas</div>
+                      <div className="text-sm font-black text-foreground">
+                        {formatBytes(usage.storage.total_bytes)}
+                      </div>
+                      <div className="text-[10px] font-bold text-muted-foreground uppercase leading-tight">
+                        de {formatBytes(STORAGE_LIMIT_BYTES)} (ref. Free)
+                      </div>
                     </div>
                   </div>
-                  <Progress value={creditStats?.ia.usedPercentage} className="h-2 bg-orange-500/10" />
-                </div>
-                {/* Summary Section */}
-                <div className="lg:col-span-2 pt-6 border-t border-primary/10">
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-                    <div className="space-y-2">
-                      <div className="flex justify-between text-xs font-bold uppercase tracking-wider text-muted-foreground">
-                        <span>Uso Total do Período (Plano)</span>
-                        <span className="text-primary">{creditStats?.credits.usedPercentage.toFixed(1)}%</span>
-                      </div>
-                      <Progress value={creditStats?.credits.usedPercentage} className="h-2 bg-primary/10" />
-                      <div className="flex justify-between text-[11px] text-muted-foreground">
-                        <span>{creditStats?.credits.used} usados</span>
-                        <span>Total: {creditStats?.credits.total}</span>
-                      </div>
+                  <Progress value={storagePercentage} className="h-2 bg-orange-500/10" />
+                  <div className="grid grid-cols-3 gap-3 pt-1">
+                    <div>
+                      <div className="text-[10px] text-muted-foreground uppercase font-bold">Lojas</div>
+                      <div className="text-lg font-black">{usage.counts.lojas_ativas}/{usage.counts.lojas}</div>
                     </div>
+                    <div>
+                      <div className="text-[10px] text-muted-foreground uppercase font-bold">Pedidos</div>
+                      <div className="text-lg font-black">{Number(usage.counts.pedidos).toLocaleString("pt-BR")}</div>
+                    </div>
+                    <div>
+                      <div className="text-[10px] text-muted-foreground uppercase font-bold">Usuários</div>
+                      <div className="text-lg font-black">{usage.counts.auth_users}</div>
+                    </div>
+                  </div>
+                </div>
 
-                    <div className="flex justify-around items-center bg-muted/30 rounded-2xl p-4 border border-border/50">
-                      <div className="text-center">
-                        <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider block">Créditos Restantes</span>
-                        <span className="text-2xl font-black text-primary">{creditStats?.credits.remaining}</span>
-                      </div>
-                      <div className="w-px h-8 bg-border/50" />
-                      <div className="text-center">
-                        <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider block">Cota Diária IA</span>
-                        <div className="flex items-baseline justify-center gap-1">
-                          <span className="text-2xl font-black text-foreground">{creditStats?.credits.dailyRemaining}</span>
-                          <span className="text-xs font-bold text-muted-foreground">/ {creditStats?.credits.dailyTotal}</span>
+                <div className="lg:col-span-2 pt-6 border-t border-primary/10">
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                    {[
+                      { label: "Produtos", value: usage.counts.produtos, icon: Package },
+                      { label: "Pedidos hoje", value: usage.counts.pedidos_hoje, icon: ShoppingBag },
+                      { label: "Perfis", value: usage.counts.clientes, icon: Users },
+                      { label: "Buckets", value: usage.storage.by_bucket?.length || 0, icon: Cloud },
+                    ].map((item) => (
+                      <div key={item.label} className="flex items-center gap-3 rounded-2xl border border-border/50 bg-muted/20 px-4 py-3">
+                        <div className="p-2 rounded-xl bg-background">
+                          <item.icon className="w-4 h-4 text-primary" />
+                        </div>
+                        <div>
+                          <div className="text-[10px] font-bold uppercase text-muted-foreground tracking-wider">{item.label}</div>
+                          <div className="text-xl font-black">{Number(item.value).toLocaleString("pt-BR")}</div>
                         </div>
                       </div>
-                    </div>
+                    ))}
                   </div>
                 </div>
               </div>
@@ -640,45 +678,46 @@ const SystemMetrics = () => {
           </Card>
         </motion.div>
 
-        {/* Histórico de consumo diário + destino dos créditos */}
+        {/* Atividade 7 dias + breakdown storage */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="lg:col-span-2">
             <Card className="h-full">
               <CardHeader>
                 <CardTitle className="flex items-center gap-2 text-base">
                   <Activity className="w-4 h-4 text-primary" />
-                  Histórico de Consumo Diário
+                  Atividade dos Últimos 7 Dias
                 </CardTitle>
-                <CardDescription>Evolução dos créditos consumidos nos últimos 7 dias</CardDescription>
+                <CardDescription>Pedidos e acessos únicos no Supabase</CardDescription>
               </CardHeader>
               <CardContent>
                 <div className="h-64">
                   <ResponsiveContainer width="100%" height="100%">
-                    <AreaChart data={creditStats?.historico ?? []}>
+                    <AreaChart data={activityData}>
                       <defs>
-                        <linearGradient id="gradCredits" x1="0" y1="0" x2="0" y2="1">
-                          <stop offset="5%" stopColor="hsl(var(--primary))" stopOpacity={0.5} />
+                        <linearGradient id="gradPedidos" x1="0" y1="0" x2="0" y2="1">
+                          <stop offset="5%" stopColor="hsl(var(--primary))" stopOpacity={0.45} />
                           <stop offset="95%" stopColor="hsl(var(--primary))" stopOpacity={0} />
+                        </linearGradient>
+                        <linearGradient id="gradAcessos" x1="0" y1="0" x2="0" y2="1">
+                          <stop offset="5%" stopColor="#0EA5E9" stopOpacity={0.35} />
+                          <stop offset="95%" stopColor="#0EA5E9" stopOpacity={0} />
                         </linearGradient>
                       </defs>
                       <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
                       <XAxis dataKey="dia" fontSize={11} tickLine={false} axisLine={false} />
-                      <YAxis fontSize={11} tickLine={false} axisLine={false} />
+                      <YAxis fontSize={11} tickLine={false} axisLine={false} allowDecimals={false} />
                       <RechartsTooltip
-                        formatter={(v: number) => [`${Number(v).toFixed(2)} créditos`, "Consumo"]}
                         contentStyle={{ borderRadius: 10, fontSize: 12, background: "hsl(var(--card))", border: "1px solid hsl(var(--border))" }}
                       />
-                      <Area type="monotone" dataKey="total" stroke="hsl(var(--primary))" strokeWidth={2} fill="url(#gradCredits)" />
+                      <Legend />
+                      <Area type="monotone" dataKey="acessos" name="Acessos" stroke="#0EA5E9" strokeWidth={2} fill="url(#gradAcessos)" />
+                      <Area type="monotone" dataKey="pedidos" name="Pedidos" stroke="hsl(var(--primary))" strokeWidth={2} fill="url(#gradPedidos)" />
                     </AreaChart>
                   </ResponsiveContainer>
                 </div>
                 <div className="mt-3 flex items-center justify-between text-xs text-muted-foreground">
-                  <span>Média diária: <strong className="text-foreground">
-                    {(((creditStats?.historico ?? []).reduce((s, d) => s + d.total, 0)) / Math.max(1, (creditStats?.historico ?? []).length)).toFixed(2)}
-                  </strong> créditos</span>
-                  <span>Total 7 dias: <strong className="text-foreground">
-                    {((creditStats?.historico ?? []).reduce((s, d) => s + d.total, 0)).toFixed(2)}
-                  </strong> créditos</span>
+                  <span>Pedidos 7d: <strong className="text-foreground">{totalPedidos7d}</strong></span>
+                  <span>Acessos 7d: <strong className="text-foreground">{totalAcessos7d}</strong></span>
                 </div>
               </CardContent>
             </Card>
@@ -688,41 +727,30 @@ const SystemMetrics = () => {
             <Card className="h-full">
               <CardHeader>
                 <CardTitle className="flex items-center gap-2 text-base">
-                  <Cloud className="w-4 h-4 text-primary" />
-                  Onde os Créditos são Usados
+                  <HardDrive className="w-4 h-4 text-primary" />
+                  Storage por Bucket
                 </CardTitle>
-                <CardDescription>Consumo por recurso no período atual</CardDescription>
+                <CardDescription>Uso real em MB no Supabase Storage</CardDescription>
               </CardHeader>
               <CardContent className="space-y-3 max-h-72 overflow-y-auto custom-scrollbar">
-                {(creditStats?.breakdown ?? []).map((b) => {
-                  const max = Math.max(...((creditStats?.breakdown ?? []).map(x => x.valor)), 1);
-                  const getTooltip = (item: string) => {
-                    const i = item.toLowerCase();
-                    if (i.includes("compute tiny")) return "Servidor principal do backend (API e Lógica).";
-                    if (i.includes("mensagens") || i.includes("build")) return "Créditos usados para processar prompts e gerar código pela IA.";
-                    if (i.includes("banco") || i.includes("database")) return "Armazenamento e processamento de dados no PostgreSQL.";
-                    if (i.includes("ia") || i.includes("inteligência")) return "Uso direto de modelos de IA (Chat, Imagens, etc).";
-                    if (i.includes("egress")) return "Tráfego de saída (dados enviados para o navegador do usuário).";
-                    if (i.includes("storage")) return "Espaço em disco para arquivos, logos e imagens de produtos.";
-                    if (i.includes("realtime")) return "Conexões ao vivo (atualização automática de pedidos e chat).";
-                    if (i.includes("edge functions")) return "Funções serverless executadas sob demanda (Webhooks, Pagamentos).";
-                    if (i.includes("worker")) return "Tarefas de processamento em segundo plano.";
-                    return "Consumo de recursos de infraestrutura.";
-                  };
-                  
+                {bucketBreakdown.length === 0 && (
+                  <p className="text-sm text-muted-foreground">Nenhum arquivo encontrado.</p>
+                )}
+                {bucketBreakdown.map((b) => {
+                  const max = Math.max(...bucketBreakdown.map((x) => x.valor), 1);
                   return (
                     <Tooltip key={b.item}>
                       <TooltipTrigger asChild>
                         <div className="space-y-1 cursor-help group/item">
                           <div className="flex items-center justify-between text-xs">
                             <span className="font-medium text-foreground group-hover/item:text-primary transition-colors">{b.item}</span>
-                            <span className="font-bold text-muted-foreground">{b.valor.toFixed(3)}</span>
+                            <span className="font-bold text-muted-foreground">{b.valor.toFixed(1)} MB</span>
                           </div>
                           <Progress value={(b.valor / max) * 100} className="h-1.5" />
                         </div>
                       </TooltipTrigger>
                       <TooltipContent side="left">
-                        <p className="text-[10px] font-medium">{getTooltip(b.item)}</p>
+                        <p className="text-[10px] font-medium">{b.files} arquivos · {b.valor.toFixed(2)} MB</p>
                       </TooltipContent>
                     </Tooltip>
                   );
@@ -739,16 +767,16 @@ const SystemMetrics = () => {
           {[
             { 
               label: "Armazenamento Usado", 
-              value: `${metrics!.storage.totalUsageMB}MB`, 
-              sub: `de ${metrics!.storage.totalLimitMB}MB`, 
+              value: formatBytes(usage.storage.total_bytes),
+              sub: `de ${formatBytes(STORAGE_LIMIT_BYTES)}`,
               icon: HardDrive, 
               color: "text-blue-500", 
               bg: "bg-blue-500/10",
-              description: "Total de espaço ocupado por arquivos e imagens no Lovable Cloud."
+              description: "Total de espaço ocupado por arquivos no Supabase Storage (imagens, logos, installers)."
             },
             { 
               label: "Lojistas Ativos", 
-              value: metrics!.counts.lojistas, 
+              value: metrics.counts.lojistas,
               sub: "Estabelecimentos ativos", 
               icon: Store, 
               color: "text-purple-500", 
@@ -837,7 +865,7 @@ const SystemMetrics = () => {
                   <Database className="w-5 h-5 text-primary" />
                   Status de Armazenamento
                 </CardTitle>
-                <CardDescription>Uso de disco no Lovable Cloud</CardDescription>
+                <CardDescription>Uso de disco no Supabase Storage</CardDescription>
               </div>
               <Button
                 variant="ghost"
@@ -845,6 +873,8 @@ const SystemMetrics = () => {
                 className="h-8 w-8 text-muted-foreground hover:text-primary transition-colors"
                 onClick={() => {
                   queryClient.invalidateQueries({ queryKey: ["admin-system-metrics"] });
+                  queryClient.invalidateQueries({ queryKey: ["supabase-system-usage"] });
+                  refetchUsage();
                   toast.info("Métricas atualizadas");
                 }}
               >
@@ -862,22 +892,26 @@ const SystemMetrics = () => {
               
               <div className="p-4 rounded-xl bg-muted/30 border border-border/50">
                 <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">Informação do Banco</p>
-                <div className="grid grid-cols-3 gap-2 mt-2">
+                <div className="grid grid-cols-2 gap-2 mt-2">
+                  <div className="flex flex-col">
+                    <span className="text-[10px] text-muted-foreground">Tamanho</span>
+                    <span className="text-sm font-bold text-foreground">{metrics.database.sizePretty}</span>
+                  </div>
+                  <div className="flex flex-col">
+                    <span className="text-[10px] text-muted-foreground">Arquivos</span>
+                    <span className="text-sm font-bold text-foreground">{Number(usage.storage.file_count).toLocaleString("pt-BR")}</span>
+                  </div>
                   <div className="flex flex-col">
                     <span className="text-[10px] text-muted-foreground">Tabelas</span>
-                    <span className="text-sm font-bold text-foreground">{metrics?.database?.tables || 0}</span>
+                    <span className="text-sm font-bold text-foreground">{metrics.database.tables || 0}</span>
                   </div>
                   <div className="flex flex-col">
                     <span className="text-[10px] text-muted-foreground">Linhas</span>
-                    <span className="text-sm font-bold text-foreground">{metrics?.database?.rows?.toLocaleString('pt-BR') || 0}</span>
-                  </div>
-                  <div className="flex flex-col">
-                    <span className="text-[10px] text-muted-foreground">Colunas</span>
-                    <span className="text-sm font-bold text-foreground">{metrics?.database?.columns?.toLocaleString('pt-BR') || 0}</span>
+                    <span className="text-sm font-bold text-foreground">{metrics.database.rows?.toLocaleString('pt-BR') || 0}</span>
                   </div>
                 </div>
                 <p className="text-[10px] text-muted-foreground leading-relaxed mt-4">
-                  Monitoramento em tempo real da estrutura e volume de dados no Supabase.
+                  Dados ao vivo do projeto Supabase (PostgreSQL + Storage).
                 </p>
               </div>
             </CardContent>
@@ -890,7 +924,7 @@ const SystemMetrics = () => {
                   <LayoutGrid className="w-5 h-5 text-primary" />
                   Consumo por Lojista {showAllLojistas ? "(Todos)" : "(Top 5)"}
                 </CardTitle>
-                <CardDescription>Uso individual de armazenamento em MB</CardDescription>
+                <CardDescription>Uso real de storage por loja (pasta no bucket)</CardDescription>
               </div>
               <Button 
                 variant="outline" 
@@ -898,14 +932,17 @@ const SystemMetrics = () => {
                 onClick={() => setShowAllLojistas(!showAllLojistas)}
                 className="font-bold border-primary/20 hover:bg-primary/10 shrink-0 ml-2"
               >
-                {showAllLojistas ? "Ver Top 5" : `Ver Todos (${metrics?.storage.lojistas.length})`}
+                {showAllLojistas ? "Ver Top 5" : `Ver Todos (${metrics.storage.lojistas.length})`}
               </Button>
             </CardHeader>
             <CardContent>
               <div className={`${showAllLojistas ? 'max-h-[500px]' : 'h-[300px]'} w-full overflow-y-auto overflow-x-hidden pr-2`}>
-                <ResponsiveContainer width="100%" height={showAllLojistas ? Math.max(metrics!.storage.lojistas.length * 45, 300) : "100%"}>
+                {metrics.storage.lojistas.length === 0 ? (
+                  <p className="text-sm text-muted-foreground py-10 text-center">Nenhum arquivo vinculado a lojas encontrado.</p>
+                ) : (
+                <ResponsiveContainer width="100%" height={showAllLojistas ? Math.max(metrics.storage.lojistas.length * 45, 300) : "100%"}>
                   <BarChart 
-                    data={showAllLojistas ? metrics!.storage.lojistas : metrics!.storage.lojistas.slice(0, 5)} 
+                    data={showAllLojistas ? metrics.storage.lojistas : metrics.storage.lojistas.slice(0, 5)}
                     layout="vertical" 
                     margin={{ left: 10, right: 20 }}
                     barCategoryGap={2}
@@ -926,16 +963,45 @@ const SystemMetrics = () => {
                       formatter={(value: number) => [`${value} MB`, 'Uso']}
                     />
                     <Bar dataKey="usage" radius={[0, 4, 4, 0]} barSize={24}>
-                      {metrics!.storage.lojistas.map((_, index) => (
+                      {metrics.storage.lojistas.map((_, index) => (
                         <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
                       ))}
                     </Bar>
                   </BarChart>
                 </ResponsiveContainer>
+                )}
               </div>
             </CardContent>
           </Card>
         </div>
+
+        {/* Top tables */}
+        <Card className="border-border/50 shadow-sm">
+          <CardHeader>
+            <CardTitle className="text-lg flex items-center gap-2">
+              <Table2 className="w-5 h-5 text-primary" />
+              Maiores Tabelas do Banco
+            </CardTitle>
+            <CardDescription>Ordenadas por tamanho em disco no PostgreSQL</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+              {topTables.map((t) => (
+                <div key={t.name} className="flex items-center justify-between rounded-xl border border-border/50 bg-muted/20 px-4 py-3">
+                  <div className="min-w-0">
+                    <div className="text-sm font-bold truncate">{t.name}</div>
+                    <div className="text-[10px] text-muted-foreground uppercase font-bold tracking-wider">
+                      {Number(t.rows).toLocaleString("pt-BR")} linhas
+                    </div>
+                  </div>
+                  <Badge variant="secondary" className="shrink-0 font-bold">
+                    {t.size_pretty || formatBytes(t.size_bytes)}
+                  </Badge>
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
 
         <Card className="border-border/50 shadow-sm">
           <CardHeader>
@@ -978,9 +1044,9 @@ const SystemMetrics = () => {
                   <PieChart>
                     <Pie
                       data={[
-                        { name: 'Lojistas', value: metrics!.counts.lojistas },
-                        { name: 'Clientes', value: 350 }, // Simulated client total
-                        { name: 'Staff', value: 12 }
+                        { name: 'Lojas', value: metrics.counts.lojistas },
+                        { name: 'Perfis', value: usage.counts.clientes },
+                        { name: 'Auth users', value: usage.counts.auth_users },
                       ]}
                       cx="50%"
                       cy="50%"
@@ -997,9 +1063,9 @@ const SystemMetrics = () => {
               </div>
               <div className="w-full md:w-1/2 space-y-4">
                 {[
-                  { label: 'Lojistas', value: metrics!.counts.lojistas, color: 'bg-[#8B5CF6]', desc: 'Proprietários de lojas' },
-                  { label: 'Clientes', value: 350, color: 'bg-[#D946EF]', desc: 'Usuários finais' },
-                  { label: 'Staff / Admin', value: 12, color: 'bg-[#F97316]', desc: 'Administração interna' }
+                  { label: 'Lojas ativas', value: metrics.counts.lojistas, color: 'bg-[#8B5CF6]', desc: 'Estabelecimentos ativos' },
+                  { label: 'Perfis', value: usage.counts.clientes, color: 'bg-[#D946EF]', desc: 'Registros em profiles' },
+                  { label: 'Usuários Auth', value: usage.counts.auth_users, color: 'bg-[#F97316]', desc: 'Contas no Supabase Auth' }
                 ].map((item) => (
                   <div key={item.label} className="flex items-center justify-between">
                     <div className="flex items-center gap-2">
@@ -1020,17 +1086,17 @@ const SystemMetrics = () => {
             <CardHeader>
               <CardTitle className="text-lg flex items-center gap-2">
                 <Activity className="w-5 h-5 text-primary" />
-                Performance do Banco de Dados
+                Estatísticas do Banco de Dados
               </CardTitle>
-              <CardDescription>Status das consultas e transações Supabase</CardDescription>
+              <CardDescription>Dados coletados no Supabase. Esta tela não estima créditos ou custos.</CardDescription>
             </CardHeader>
             <CardContent>
               <div className="space-y-4">
                 {[
-                  { label: "Tempo Médio de Resposta", value: "42ms", status: "Excelente", desc: "Velocidade das consultas" },
-                  { label: "Transações p/ Segundo", value: "156", status: "Estável", desc: "Volume de operações" },
-                  { label: "Conexões Ativas", value: "24/100", status: "Saudável", desc: "Pool de conexões" },
-                  { label: "Latência de Replicação", value: "< 1ms", status: "Sincronizado", desc: "Consistência de dados" }
+                  { label: "Tamanho do banco", value: formatBytes(usage.database.size_bytes), status: "Coletado", desc: "Tamanho informado pelo PostgreSQL" },
+                  { label: "Tabelas públicas", value: usage.database.tables, status: "Coletado", desc: "Tabelas no schema public" },
+                  { label: "Linhas estimadas", value: usage.database.rows, status: "Estimativa", desc: "Estatísticas do PostgreSQL" },
+                  { label: "Coletado em", value: usage.generated_at ? new Date(usage.generated_at).toLocaleString("pt-BR") : "Não informado", status: "Supabase", desc: "Horário da coleta no banco" }
                 ].map((item) => (
                   <div key={item.label} className="flex justify-between items-center p-3 rounded-xl bg-background/50 border border-border/30">
                     <div>

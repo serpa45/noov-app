@@ -1,6 +1,11 @@
 import { createRoot } from "react-dom/client";
 import App from "./App.tsx";
 import "./index.css";
+import { setupGlobalErrorLogging } from "./utils/errorLogger";
+import AppErrorBoundary from "./components/AppErrorBoundary";
+
+const stopErrorLogging = setupGlobalErrorLogging();
+if (import.meta.hot) import.meta.hot.dispose(stopErrorLogging);
 
 const APP_CACHE_PREFIX = "noov-pwa-";
 
@@ -43,7 +48,7 @@ const cleanupLegacyAppShell = async () => {
 
 // Renderiza o app — chamado após (possível) checagem de atualização
 const renderApp = () => {
-  createRoot(document.getElementById("root")!).render(<App />);
+  createRoot(document.getElementById("root")!).render(<AppErrorBoundary><App /></AppErrorBoundary>);
 };
 
 renderApp();
