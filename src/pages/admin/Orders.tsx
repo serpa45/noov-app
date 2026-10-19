@@ -515,7 +515,7 @@ const Orders = () => {
       if (!loja || !order) return;
       try {
         const { printOrderViaAgent } = await import("@/utils/printAgentClient");
-        const agent = await printOrderViaAgent(order);
+        const agent = await printOrderViaAgent(order, undefined, true);
         if (agent.ok) {
           console.log("Auto-printed via Print Agent:", order.id);
           return;
@@ -531,7 +531,7 @@ const Orders = () => {
   );
 
   const printOrder = useCallback(
-    async (order: any) => {
+    async (order: any, automatic = false) => {
       if (!order) return;
 
       const isMobileOrTablet = isMobileOrTabletDevice();
@@ -572,9 +572,9 @@ const Orders = () => {
       // Desktop: NOOV Print Agent (mesma impressora do teste).
       try {
         const { printOrderViaAgent } = await import("@/utils/printAgentClient");
-        const agent = await printOrderViaAgent(order);
+        const agent = await printOrderViaAgent(order, undefined, automatic);
         if (agent.ok) {
-          toast({ title: "Impressão enviada para a térmica" });
+          toast({ title: "Pedido enviado à fila da impressora" });
           return;
         }
         if (!agent.offline) {
@@ -586,6 +586,11 @@ const Orders = () => {
           return;
         }
       } catch {}
+
+      if (automatic) {
+        toast({ title: "Impressão automática não enviada", description: "Verifique se o Print Agent está conectado. O pedido pode ser impresso manualmente.", variant: "destructive" });
+        return;
+      }
 
       try {
         toast({ title: "Abrindo janela de impressão..." });
@@ -610,9 +615,9 @@ const Orders = () => {
         if (getBluetoothSettings().printOnAccept === false) return;
       } catch {}
       if (isMobileOrTabletDevice()) {
-        await printOrder(order);
+        await printOrder(order, true);
       } else if ((loja as any)?.impressao_automatica) {
-        await printOrder(order);
+        await printOrder(order, true);
       }
     },
     [loja, printThermal, printOrder],
@@ -669,7 +674,7 @@ const Orders = () => {
             try { await bluetoothPrintService.tryAutoReconnect(); } catch {}
           }
           for (const order of enteredPending) {
-            try { await printOrder(order); } catch (e) { console.error(e); }
+            try { await printOrder(order, true); } catch (e) { console.error(e); }
           }
           return;
         }
@@ -685,7 +690,7 @@ const Orders = () => {
           }
           if (bluetoothPrintService.isConnected()) {
             for (const order of enteredPending) {
-              try { await printOrder(order); } catch (e) { console.error(e); }
+              try { await printOrder(order, true); } catch (e) { console.error(e); }
             }
             return;
           }
@@ -693,7 +698,7 @@ const Orders = () => {
 
         if (lojaAuto) {
           for (const order of enteredPending) {
-            try { await printOrder(order); } catch (e) { console.error(e); }
+            try { await printOrder(order, true); } catch (e) { console.error(e); }
           }
         }
       } catch (err) {

@@ -14,7 +14,7 @@ import { setErrorLoggingContext } from "@/utils/errorLogger";
 import { formatPhone, maskPhoneInput } from "@/lib/utils";
 import { motion, AnimatePresence } from "framer-motion";
 import {
-  Loader2, ShoppingCart, Plus, Minus, X, Send, Star, Clock, Bike, Search, ChevronLeft, Check, Flame, ChevronDown, MapPin, Navigation, User, Pencil, Camera, CreditCard, Banknote, Smartphone, QrCode, ClipboardList, Package, ChefHat, Truck, CircleCheck, Map, FileText, Ban, MessageCircle, Instagram, Phone, Share2, Ticket, History, UtensilsCrossed, Trash2,
+  Loader2, ShoppingCart, Plus, Minus, X, Send, Star, Clock, Bike, Search, ChevronLeft, Check, Flame, ChevronDown, MapPin, Navigation, User, Pencil, Camera, CreditCard, Banknote, Smartphone, QrCode, ClipboardList, Package, ChefHat, Truck, CircleCheck, FileText, Ban, MessageCircle, Instagram, Phone, Share2, Ticket, History, UtensilsCrossed, Trash2,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -1938,7 +1938,7 @@ const StoreMenu = () => {
       }
       
       // Get unique products that are not already in the cart
-      const uniqueProducts = new (Map as any)();
+      const uniqueProducts = new globalThis.Map<string, any>();
       data?.forEach((d: any) => {
         const prod = d.produtos;
         if (prod && !productIds.includes(prod.id)) {

@@ -1,5 +1,5 @@
 import type { AgentConfig } from "./config.js";
-import { log } from "./logger.js";
+import { log, setRemoteErrorReporter } from "./logger.js";
 import { connect, type Session } from "./supabase.js";
 import { startWatching, type StopWatching } from "./watcher.js";
 
@@ -39,6 +39,7 @@ export function status(): RuntimeStatus {
 }
 
 async function teardown(): Promise<void> {
+  setRemoteErrorReporter(undefined);
   if (retryTimer) {
     clearTimeout(retryTimer);
     retryTimer = null;
@@ -66,6 +67,14 @@ export async function applyConfig(next: AgentConfig): Promise<void> {
 
   try {
     session = await connect(next);
+    const connected = session;
+    setRemoteErrorReporter(async (message) => {
+      const { error } = await connected.client.from("error_logs").insert({
+        store_id: connected.loja.id, message, url: "noov-print-agent",
+        metadata: { type: "print_agent_error", source: "print-agent" },
+      });
+      if (error) throw error;
+    });
     stop = await startWatching(session, next);
     startedAt = new Date().toISOString();
   } catch (err: any) {

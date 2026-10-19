@@ -11,6 +11,16 @@ const RECENT_LIMIT = 300;
 let minLevel: Level = "info";
 let logDir: string | null = null;
 const recent: string[] = [];
+let remoteReporter: ((message: string) => Promise<void>) | undefined;
+const remotelyReported = new Map<string, number>();
+export function setRemoteErrorReporter(reporter?: (message: string) => Promise<void>): void {
+  remoteReporter = reporter;
+}
+function safeText(text: string): string {
+  return text.replace(/Bearer\s+[A-Za-z0-9._-]+/gi, "Bearer [redacted]")
+    .replace(/eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+/g, "[redacted]")
+    .replace(/([?&#](?:access_token|refresh_token|token|password|code)=)[^\s&#]*/gi, "$1[redacted]").slice(0, 12000);
+}
 
 /** Ultimas linhas em memoria, mostradas na tela de configuracao do agente. */
 export function recentLogs(): string[] {
@@ -34,6 +44,16 @@ function write(level: Level, args: unknown[]): void {
   const text = args
     .map((a) => (typeof a === "string" ? a : a instanceof Error ? a.stack || a.message : JSON.stringify(a)))
     .join(" ");
+  if (level === "error" && remoteReporter) {
+    const safe = safeText(text);
+    const now = Date.now();
+    for (const [key, at] of remotelyReported) if (now - at > 60000) remotelyReported.delete(key);
+    if (!remotelyReported.has(safe)) {
+      remotelyReported.set(safe, now);
+      // O envio remoto nunca bloqueia o trabalho da impressora ou gera outro log remoto.
+      void remoteReporter(safe).catch(() => { remotelyReported.delete(safe); });
+    }
+  }
   const entry = `[${stamp}] ${level.toUpperCase()} ${text}`;
 
   recent.push(entry);

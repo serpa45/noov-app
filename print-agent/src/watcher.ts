@@ -2,7 +2,7 @@ import type { AgentConfig } from "./config.js";
 import type { OrderRow } from "./documents.js";
 import { log } from "./logger.js";
 import { printOrder } from "./printer.js";
-import { markPrinted } from "./state.js";
+import { markPrinted, hasPrintState } from "./state.js";
 import type { Session } from "./supabase.js";
 
 const LOOKBACK_HOURS = 12;
@@ -30,7 +30,10 @@ async function seedBaseline(session: Session, config: AgentConfig): Promise<void
   for (const row of data ?? []) {
     if (!isTrigger(config, (row as any).status)) continue;
     for (const printer of config.printers) {
-      for (const kind of printer.documents) markPrinted(`${(row as any).id}:${printer.name}:${kind}`);
+      for (const kind of printer.documents) {
+        const key = `${(row as any).id}:${printer.name}:${kind}`;
+        if (!hasPrintState(key)) markPrinted(key);
+      }
     }
     count++;
   }

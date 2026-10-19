@@ -207,13 +207,13 @@ async function handle(req: IncomingMessage, res: ServerResponse): Promise<void> 
         return;
       }
       const only = Array.isArray(body?.documents) ? body.documents : undefined;
-      await printOrder(order, session.loja, config, {
+      const result = await printOrder(order, session.loja, config, {
         source: "painel",
-        force: true,
+        force: body?.automatic !== true,
         only,
       });
-      log.info(`Pedido ${order.numero_diario ?? order.id} impresso a pedido do painel.`);
-      json(res, 200, { ok: true });
+      if (result.ok) log.info(`Pedido ${order.numero_diario ?? order.id}: envio concluido para a fila da impressora.`);
+      json(res, 200, { ...result, error: result.errors.join("; ") || undefined });
     } catch (err: any) {
       json(res, 200, { ok: false, error: err?.message || String(err) });
     }
