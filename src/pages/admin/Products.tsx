@@ -592,7 +592,8 @@ const Products = () => {
       if (imageFile) {
         imagemUrl = await uploadImage();
       }
-      let bannerUrl: string | null = (editingProduct as any)?.banner_url || null;
+      // An empty preview means the user removed the saved banner.
+      let bannerUrl: string | null = bannerPreview ? (editingProduct?.banner_url || null) : null;
       if (bannerFile) {
         bannerUrl = await uploadBanner();
       }
@@ -677,7 +678,7 @@ const Products = () => {
       let finalProductId = "";
       if (editingProduct) {
         finalProductId = editingProduct.id;
-        const { error } = await supabase.from("produtos").update(productData).eq("id", editingProduct.id);
+        const { error } = await supabase.from("produtos").update(productData).eq("id", editingProduct.id).select("id").single();
         if (error) throw error;
         toast.success("Produto atualizado com sucesso!");
       } else {
