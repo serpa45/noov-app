@@ -1,1 +1,1 @@
-export { default } from "../../server/clearErrorLogs";
+export { default } from "../../server/clearErrorLogs.js";
