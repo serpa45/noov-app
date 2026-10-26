@@ -1,8 +1,7 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { errorLogKeys, fetchErrorLogs } from "@/utils/errorLogQueries";
+import { clearErrorLogs, errorLogKeys, fetchErrorLogs } from "@/utils/errorLogQueries";
 import { useRealtimeSubscription } from "@/hooks/useRealtimeSubscription";
 import { errorMessage } from "@/utils/errorLogger";
-import { supabase } from "@/integrations/supabase/client";
 import { 
   Card, 
   CardContent, 
@@ -30,6 +29,7 @@ import { toast } from "sonner";
 const ErrorLogs = () => {
   const queryClient = useQueryClient();
   useRealtimeSubscription("error_logs", [ [...errorLogKeys.list], [...errorLogKeys.count] ]);
+  const [isClearing, setIsClearing] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
   const [isPaused, setIsPaused] = useState(() => {
     if (typeof window === "undefined") return false;
@@ -48,19 +48,19 @@ const ErrorLogs = () => {
   });
 
   const clearLogs = async () => {
-    if (!confirm("Tem certeza que deseja limpar todos os logs?")) return;
-    
-    const { error } = await (supabase as any)
-      .from("error_logs")
-      .delete()
-      .neq("id", "00000000-0000-0000-0000-000000000000"); // Delete all
-
-    if (error) {
-      toast.error("Erro ao limpar logs");
-    } else {
-      toast.success("Logs limpos com sucesso");
-      queryClient.invalidateQueries({ queryKey: errorLogKeys.list });
-      queryClient.invalidateQueries({ queryKey: errorLogKeys.count });
+    if (isClearing || !confirm("Tem certeza que deseja limpar todos os logs?")) return;
+    setIsClearing(true);
+    try {
+      const deleted = await clearErrorLogs();
+      toast.success(deleted > 0 ? `${deleted} log(s) excluído(s) com sucesso` : "Nenhum log anterior para excluir.");
+    } catch (error) {
+      toast.error(errorMessage(error));
+    } finally {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: errorLogKeys.list }),
+        queryClient.invalidateQueries({ queryKey: errorLogKeys.count }),
+      ]);
+      setIsClearing(false);
     }
   };
 
@@ -94,9 +94,9 @@ const ErrorLogs = () => {
               {isPaused ? <Play className="w-4 h-4" /> : <Pause className="w-4 h-4" />}
               {isPaused ? "Retomar" : "Pausar"}
             </Button>
-            <Button variant="destructive" size="sm" onClick={clearLogs} className="gap-2">
+            <Button variant="destructive" size="sm" onClick={clearLogs} disabled={isClearing} className="gap-2">
               <Trash2 className="w-4 h-4" />
-              Limpar Logs
+              {isClearing ? "Limpando..." : "Limpar Logs"}
             </Button>
           </div>
         </div>

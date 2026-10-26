@@ -4,8 +4,13 @@
   "outputDirectory": "dist",
   "rewrites": [
     {
-      "source": "/(.*)",
+      "source": "/((?!api/).*)",
       "destination": "/index.html"
     }
-  ]
+  ],
+  "functions": {
+    "api/admin/clear-error-logs.ts": {
+      "maxDuration": 60
+    }
+  }
 }
