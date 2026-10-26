@@ -597,6 +597,7 @@ const MeuPlano = () => {
               used={usoClientes}
               limit={limiteClientes}
               pct={pctClientes}
+              useDefaultColor
             />
             <UsageBar
               icon={<HardDrive className="w-4 h-4 text-primary" />}
@@ -1065,16 +1066,17 @@ const MeuPlano = () => {
 };
 
 // Componente de barra de uso
-function UsageBar({ icon, label, used, limit, pct, suffix = "" }: {
+function UsageBar({ icon, label, used, limit, pct, suffix = "", useDefaultColor = false }: {
   icon: React.ReactNode;
   label: string;
   used: number;
   limit: number;
   pct: number;
   suffix?: string;
+  useDefaultColor?: boolean;
 }) {
   const isUnlimited = limit === Infinity;
-  const colorClass = pct >= 90 ? "[&>div]:bg-destructive" : pct >= 70 ? "[&>div]:bg-yellow-500" : "[&>div]:bg-primary";
+  const colorClass = useDefaultColor ? "[&>div]:bg-primary" : pct >= 90 ? "[&>div]:bg-destructive" : pct >= 70 ? "[&>div]:bg-yellow-500" : "[&>div]:bg-primary";
   
   return (
     <div className="space-y-1.5">
