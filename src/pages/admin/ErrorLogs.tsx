@@ -1,3 +1,4 @@
+import { explainErrorLog } from "@/utils/errorLogExplanation";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { clearErrorLogs, errorLogKeys, fetchErrorLogs } from "@/utils/errorLogQueries";
 import { useRealtimeSubscription } from "@/hooks/useRealtimeSubscription";
@@ -64,11 +65,11 @@ const ErrorLogs = () => {
     }
   };
 
-  const filteredLogs = logs.filter((log: any) => 
-    log.message?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    log.lojas?.nome?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    log.url?.toLowerCase().includes(searchTerm.toLowerCase())
-  );
+  const normalizedSearch = searchTerm.toLocaleLowerCase("pt-BR");
+  const filteredLogs = logs.map(log => ({ ...log, explanation: explainErrorLog(log) }))
+    .filter(log => [log.message, log.lojas?.nome, log.url, log.explanation.area,
+      log.explanation.explanation, log.explanation.nextStep]
+      .some(value => value?.toLocaleLowerCase("pt-BR").includes(normalizedSearch)));
 
   return (
     <div className="space-y-6">
@@ -127,13 +128,14 @@ const ErrorLogs = () => {
                   <TableHead>Data/Hora</TableHead>
                   <TableHead>Loja</TableHead>
                   <TableHead>Mensagem</TableHead>
+                  <TableHead>O que aconteceu</TableHead>
                   <TableHead>URL</TableHead>
                   <TableHead>Tipo</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {isError ? (
-                  <TableRow><TableCell colSpan={5}>
+                  <TableRow><TableCell colSpan={6}>
                     <div role="alert" className="py-6 text-destructive">
                       <p>Não foi possível carregar os logs do Supabase.</p>
                       <p className="text-sm">{errorMessage(loadError)}</p>
@@ -142,13 +144,13 @@ const ErrorLogs = () => {
                   </TableCell></TableRow>
                 ) : isLoading ? (
                   <TableRow>
-                    <TableCell colSpan={5} className="text-center py-10">
+                    <TableCell colSpan={6} className="text-center py-10">
                       Carregando logs...
                     </TableCell>
                   </TableRow>
                 ) : filteredLogs.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={5} className="text-center py-10 text-muted-foreground">
+                    <TableCell colSpan={6} className="text-center py-10 text-muted-foreground">
                       {searchTerm ? "Nenhuma ocorrência corresponde à busca." : "Nenhum erro registrado."}
                     </TableCell>
                   </TableRow>
@@ -170,6 +172,13 @@ const ErrorLogs = () => {
                             </pre>
                           </details>
                         </div>
+                      </TableCell>
+                      <TableCell className="min-w-[280px] max-w-md whitespace-normal align-top">
+                        <p className="font-semibold text-sm">{log.explanation.area}</p>
+                        <p className="text-sm mt-1">{log.explanation.explanation}</p>
+                        <p className="text-xs text-muted-foreground mt-2">
+                          <span className="font-medium">O que fazer: </span>{log.explanation.nextStep}
+                        </p>
                       </TableCell>
                       <TableCell className="max-w-[200px] truncate text-xs text-muted-foreground">
                         {log.url}

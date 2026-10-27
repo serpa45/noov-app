@@ -44,6 +44,17 @@ describe("administrator error history", () => {
     show();
     await waitFor(() => expect(screen.getByText("Nenhum erro registrado.")).toBeInTheDocument());
   });
+  it("shows the readable column alongside technical details and makes it searchable", async () => {
+    mock.result.data = [{ id: "network", message: "TypeError: Load failed", created_at: "2026-10-26T19:16:56Z", metadata: { type: "query_error", source: "order-history" } }];
+    show();
+    expect(await screen.findByText("Histórico de pedidos")).toBeInTheDocument();
+    expect(screen.getByRole("columnheader", { name: "O que aconteceu" })).toBeInTheDocument();
+    expect(screen.getByText(/não identifica a causa exata/)).toBeInTheDocument();
+    expect(screen.getByText("O que fazer:")).toBeInTheDocument();
+    expect(screen.getByText("Detalhes técnicos")).toBeInTheDocument();
+    fireEvent.change(screen.getByPlaceholderText("Buscar por mensagem ou loja..."), { target: { value: "histórico de pedidos" } });
+    expect(screen.getByText("TypeError: Load failed")).toBeInTheDocument();
+  });
 });
 
 it("refreshes both the list and sidebar after a confirmed deletion", async () => {
