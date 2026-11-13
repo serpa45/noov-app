@@ -10,7 +10,7 @@ export function explainErrorLog(log: LogDetails) {
     : source === "cart-upsell" ? "Sugestões de produtos no carrinho"
     : source === "order-history-deliveries" ? "Entregas no histórico de pedidos"
     : source === "order-history" || path.endsWith("/pedidos/historico") ? "Histórico de pedidos"
-    : /system-metrics/.test(source) || path.endsWith("/metricas") ? "Métricas do sistema"
+    : /system-metrics|supabase-quota-reading/.test(source) || path.endsWith("/metricas") ? "Métricas do sistema"
     : /admin-error-logs/.test(source) ? "Histórico de erros"
     : path.endsWith("/produtos") ? "Produtos"
     : path.endsWith("/clientes") ? "Clientes"

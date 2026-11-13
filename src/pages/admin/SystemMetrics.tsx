@@ -1,3 +1,4 @@
+import { SupabaseQuotaMonitor } from "@/components/admin/SupabaseQuotaMonitor";
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -105,8 +106,6 @@ type SystemUsage = {
   activity: Array<{ dia: string; date?: string; pedidos: number; acessos: number }>;
 };
 
-const STORAGE_LIMIT_BYTES = 1 * 1024 * 1024 * 1024; // referência plano Free (1 GB)
-const DB_LIMIT_BYTES = 500 * 1024 * 1024; // referência plano Free (500 MB)
 
 const formatBytes = (bytes: number | null | undefined) => {
   if (bytes == null || Number.isNaN(bytes)) return "—";
@@ -271,7 +270,6 @@ const SystemMetrics = () => {
       return {
         storage: {
           totalUsageMB,
-          totalLimitMB: bytesToMB(STORAGE_LIMIT_BYTES),
           lojistas: lojistasStorage,
         },
         counts: {
@@ -393,14 +391,14 @@ const SystemMetrics = () => {
 
   if (usageFailed || metricsFailed) {
     const error = usageError || metricsError;
-    return <div role="alert" className="p-6 space-y-3">
+    return <div className="space-y-6"><SupabaseQuotaMonitor /><div role="alert" className="p-6 space-y-3">
       <h1 className="text-xl font-bold">Não foi possível consultar as métricas do Supabase.</h1>
       <p>{errorMessage(error)}</p>
       <Button onClick={() => {
         refetchUsage();
         queryClient.invalidateQueries({ queryKey: ["admin-system-metrics"] });
       }}>Tentar novamente</Button>
-    </div>;
+    </div></div>;
   }
 
   if (isLoading || loadingUsage || !metrics || !usage) {
@@ -412,14 +410,6 @@ const SystemMetrics = () => {
     );
   }
 
-  const storagePercentage = Math.min(
-    100,
-    (Number(usage.storage.total_bytes || 0) / STORAGE_LIMIT_BYTES) * 100
-  );
-  const dbPercentage = Math.min(
-    100,
-    (Number(usage.database.size_bytes || 0) / DB_LIMIT_BYTES) * 100
-  );
   const COLORS = ['#8B5CF6', '#D946EF', '#F97316', '#0EA5E9', '#10B981'];
 
   const activityData = usage.activity || [];
@@ -569,6 +559,8 @@ const SystemMetrics = () => {
           </div>
         </motion.div>
 
+        <SupabaseQuotaMonitor />
+
         {/* Supabase Usage Overview */}
         <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}>
           <Card className="border-primary/20 bg-gradient-to-br from-primary/5 via-card to-background overflow-hidden relative group">
@@ -593,11 +585,11 @@ const SystemMetrics = () => {
                         {usage.database.size_pretty || formatBytes(usage.database.size_bytes)}
                       </div>
                       <div className="text-[10px] font-bold text-muted-foreground uppercase leading-tight">
-                        de {formatBytes(DB_LIMIT_BYTES)} (ref. Free)
+                        Ocupação atual dos dados
                       </div>
                     </div>
                   </div>
-                  <Progress value={dbPercentage} className="h-2 bg-primary/10" />
+                  <p className="text-xs text-muted-foreground">Disco provisionado e franquias do Pro no quadro acima. O tamanho dos dados não mede todo o disco contratado.</p>
                   <div className="grid grid-cols-3 gap-3 pt-1">
                     <div>
                       <div className="text-[10px] text-muted-foreground uppercase font-bold">Tabelas</div>
@@ -632,11 +624,11 @@ const SystemMetrics = () => {
                         {formatBytes(usage.storage.total_bytes)}
                       </div>
                       <div className="text-[10px] font-bold text-muted-foreground uppercase leading-tight">
-                        de {formatBytes(STORAGE_LIMIT_BYTES)} (ref. Free)
+                        Ocupação atual de arquivos
                       </div>
                     </div>
                   </div>
-                  <Progress value={storagePercentage} className="h-2 bg-orange-500/10" />
+                  <p className="text-xs text-muted-foreground">Esta leitura não mede saída em cache nem a média de armazenamento do ciclo.</p>
                   <div className="grid grid-cols-3 gap-3 pt-1">
                     <div>
                       <div className="text-[10px] text-muted-foreground uppercase font-bold">Lojas</div>
@@ -768,7 +760,7 @@ const SystemMetrics = () => {
             { 
               label: "Armazenamento Usado", 
               value: formatBytes(usage.storage.total_bytes),
-              sub: `de ${formatBytes(STORAGE_LIMIT_BYTES)}`,
+              sub: "Arquivos armazenados neste momento",
               icon: HardDrive, 
               color: "text-blue-500", 
               bg: "bg-blue-500/10",
@@ -885,9 +877,9 @@ const SystemMetrics = () => {
               <div className="space-y-2">
                 <div className="flex justify-between text-sm">
                   <span className="text-muted-foreground">Espaço Ocupado</span>
-                  <span className="font-bold text-foreground">{storagePercentage.toFixed(1)}%</span>
+                  <span className="font-bold text-foreground">{formatBytes(usage.storage.total_bytes)}</span>
                 </div>
-                <Progress value={storagePercentage} className="h-2" />
+                <p className="text-xs text-muted-foreground">Consumo de cobrança e franquias do Pro no quadro de limites.</p>
               </div>
               
               <div className="p-4 rounded-xl bg-muted/30 border border-border/50">

@@ -11,6 +11,9 @@
   "functions": {
     "api/admin/clear-error-logs.ts": {
       "maxDuration": 60
+    },
+    "api/admin/supabase-quota-readings.ts": {
+      "maxDuration": 60
     }
   }
 }

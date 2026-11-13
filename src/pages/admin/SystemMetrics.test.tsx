@@ -51,6 +51,8 @@ describe("Supabase system metrics", () => {
   it("renders the Supabase statistics without Lovable credits or invented performance", () => {
     render(<SystemMetrics />);
     expect(screen.getByText("Sincronizado com Supabase")).toBeInTheDocument();
+    expect(screen.getByText("Franquias e limites do Supabase")).toBeInTheDocument();
+    expect(screen.queryByText(/ref\. Free/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/Sincronizado com Lovable/i)).not.toBeInTheDocument();
     expect(screen.queryByText("42ms")).not.toBeInTheDocument();
     expect(screen.queryByText("24/100")).not.toBeInTheDocument();
