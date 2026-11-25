@@ -10,7 +10,11 @@
     "lint": "eslint .",
     "preview": "vite preview",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "cloudflare:dev": "wrangler dev",
+    "cloudflare:check": "wrangler deploy --dry-run",
+    "cloudflare:deploy": "npm run build && wrangler deploy",
+    "cloudflare:types": "wrangler types worker/env.d.ts"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",
@@ -99,6 +103,7 @@
     "typescript": "^5.8.3",
     "typescript-eslint": "^8.38.0",
     "vite": "^5.4.19",
-    "vitest": "^3.2.4"
+    "vitest": "^3.2.4",
+    "wrangler": "4.168.0"
   }
 }

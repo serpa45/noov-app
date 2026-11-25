@@ -1,12 +1,13 @@
 import { createClient } from "@supabase/supabase-js";
 import { validateQuotaSnapshot } from "../src/utils/supabaseQuotas.js";
+import type { ServerEnvironment } from "./clearErrorLogs.js";
 
 export const QUOTA_BUCKET = "noov-system-metrics-private";
 export const QUOTA_OBJECT = "pro-usage-reading.json";
 type Request = { method?: string; headers: Record<string, string | string[] | undefined>; body?: unknown };
 type Response = { setHeader(name: string, value: string): unknown; status(code: number): Response; json(body: unknown): unknown };
 
-export default async function quotaReadings(req: Request, res: Response) {
+export default async function quotaReadings(req: Request, res: Response, environment: ServerEnvironment = process.env) {
   res.setHeader("Cache-Control", "no-store");
   if (!["GET", "PUT"].includes(req.method || "")) {
     res.setHeader("Allow", "GET, PUT");
@@ -14,8 +15,8 @@ export default async function quotaReadings(req: Request, res: Response) {
   }
   const authorization = req.headers.authorization;
   if (typeof authorization !== "string" || !/^Bearer \S+$/i.test(authorization)) return res.status(401).json({ error: "Entre novamente para consultar as leituras." });
-  const url = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
-  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  const url = environment.SUPABASE_URL || environment.VITE_SUPABASE_URL;
+  const serviceKey = environment.SUPABASE_SERVICE_ROLE_KEY;
   if (!url || !serviceKey) return res.status(503).json({ error: "Leituras compartilhadas indisponíveis no servidor." });
   const projectRef = new URL(url).hostname.split(".")[0];
   const client = createClient(url, serviceKey, { auth: { persistSession: false, autoRefreshToken: false } });

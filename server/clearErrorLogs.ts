@@ -9,7 +9,8 @@ function exactCount(response: globalThis.Response): number {
   if (!match) throw new Error("Missing database count");
   return Number(match[1]);
 }
-export default async function clearErrorLogs(req: Request, res: Response) {
+export type ServerEnvironment = { SUPABASE_URL?: string; VITE_SUPABASE_URL?: string; SUPABASE_SERVICE_ROLE_KEY?: string };
+export default async function clearErrorLogs(req: Request, res: Response, environment: ServerEnvironment = process.env) {
   res.setHeader("Cache-Control", "no-store");
   if (req.method !== "DELETE") {
     res.setHeader("Allow", "DELETE");
@@ -19,8 +20,8 @@ export default async function clearErrorLogs(req: Request, res: Response) {
   if (typeof authorization !== "string" || !/^Bearer \S+$/i.test(authorization)) {
     return res.status(401).json({ error: "Entre novamente para limpar os logs." });
   }
-  const url = (process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || "").replace(/\/+$/, "");
-  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  const url = (environment.SUPABASE_URL || environment.VITE_SUPABASE_URL || "").replace(/\/+$/, "");
+  const serviceKey = environment.SUPABASE_SERVICE_ROLE_KEY;
   if (!url || !serviceKey) return res.status(503).json({ error: "Limpeza de logs indisponível no servidor." });
   const headers = { apikey: serviceKey, Authorization: `Bearer ${serviceKey}` };
   try {
@@ -31,8 +32,8 @@ export default async function clearErrorLogs(req: Request, res: Response) {
       return res.status(401).json({ error: "Sessão expirada. Entre novamente." });
     }
     if (!userResponse.ok) throw new Error("Authentication unavailable");
-    const user = await userResponse.json();
-    if (!user?.id) return res.status(401).json({ error: "Sessão inválida." });
+    const user = await userResponse.json() as { id?: unknown } | null;
+    if (typeof user?.id !== "string" || !user.id) return res.status(401).json({ error: "Sessão inválida." });
     const roleResponse = await fetch(`${url}/rest/v1/rpc/has_role`, {
       method: "POST", headers: { ...headers, "Content-Type": "application/json" },
       body: JSON.stringify({ _user_id: user.id, _role: "admin" }), signal: AbortSignal.timeout(10000),

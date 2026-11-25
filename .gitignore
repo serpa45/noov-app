@@ -34,4 +34,7 @@ scratch_backup_inspect/
 
 
 .vercel
+.wrangler/
+.cloudflare/
+.dev.vars*
 .env*
