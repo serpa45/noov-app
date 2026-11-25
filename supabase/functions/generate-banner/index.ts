@@ -8,7 +8,7 @@ const corsHeaders = {
     "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
 };
 
-const NOOV_LOGO_URL = "https://mwnjoglolbyeyrmkqqqc.supabase.co/storage/v1/object/public/banners/noov-logo.png";
+const NOOV_LOGO_URL = "https://noov.app.br/noov-logo.png";
 
 const BRAND_INSTRUCTIONS = `
 BRAND GUIDELINES (MUST FOLLOW):

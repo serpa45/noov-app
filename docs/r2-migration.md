@@ -139,7 +139,9 @@ O build passa a usar R2 por padrao quando `VITE_MEDIA_STORAGE` nao estiver defin
 
 Um envio pela API publica de foto de cliente foi autorizado pelas politicas atuais do Supabase e retornou 201; a leitura devolveu os mesmos bytes. Somente esse arquivo temporario foi removido apos o teste.
 
-Geradores `generate-banner` e `generate-category-image`: codigo preparado, mas ainda sem deploy e sem ativacao de `MEDIA_STORAGE=r2`. O token de gerenciamento local nao tem acesso ao projeto Noov; requer liberar esse projeto para a conta ou fornecer acesso de gerenciamento com escopo adequado. Esses geradores ainda podem criar imagens no Supabase.
+Geradores `generate-banner` e `generate-category-image`: publicados na versao 7 apos liberar acesso de gerenciamento ao projeto. Ambos estao ACTIVE, com verify_jwt=true e o bridge R2 presente no pacote remoto. `MEDIA_STORAGE=r2` e `MEDIA_API_ORIGIN=https://noov.app.br` foram configurados e os hashes remotos conferidos. OPTIONS respondeu 200 e POST sem autenticacao respondeu 401 nas duas funcoes. O logo usado nos banners agora aponta para o arquivo publico do site Noov, conferido com HTTP 200 e image/png. Os tres testes existentes do bridge passaram. Fontes e metadados anteriores foram preservados fora do Git em `D:/noov-releases/media-migration-20261125/edge-functions-before-r2/`.
+
+Pendencia de IA: as duas funcoes ainda dependem de `LOVABLE_API_KEY`, ausente nos segredos do projeto. A integracao de armazenamento esta publicada, mas nao houve chamada real ao provedor de IA nem validacao de geracao completa. Para gerar imagens, configurar uma chave valida desse provedor ou adaptar as funcoes para outro provedor.
 ## Resultado da troca de URLs
 
 Foram atualizados e relidos com sucesso 100 campos: produtos 82, imagens de categorias 7, lojas 4, materiais de afiliado 4 e perfis 3. O plano foi regenerado com as referencias atuais imediatamente antes da aplicacao. Diario de retorno: `D:/noov-releases/media-migration-20261125/r2-url-journal.json`; plano aplicado: `r2-url-plan.json` na mesma pasta. Preservar ambos para eventual retorno.
