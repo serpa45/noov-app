@@ -68,6 +68,7 @@ export default defineConfig(async ({ mode }) => {
       dedupe: ["react", "react-dom", "react/jsx-runtime", "react/jsx-dev-runtime"],
     },
     define: {
+      ...(mode !== "test" ? { "import.meta.env.VITE_MEDIA_STORAGE": JSON.stringify(env.VITE_MEDIA_STORAGE || "r2") } : {}),
       __APP_MAJOR__: JSON.stringify(injectedMajor),
       __APP_MINOR__: JSON.stringify(injectedMinor),
       __BUILD_DAY__: JSON.stringify(buildDay),

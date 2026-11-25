@@ -4,7 +4,7 @@ import { encodedImageKey, uniqueImagePath, type ImageBucket } from "./mediaStora
 type UploadOptions = { upsert?: boolean; cacheControl?: string; contentType?: string };
 type UploadResult = { data: { publicUrl: string; path: string } | null; error: Error | null };
 
-/** R2 is opt-in at build time. Existing builds keep using Supabase until cutover. */
+/** Storage is selected at build time; Supabase remains available for rollback. */
 export async function uploadImage(bucket: ImageBucket, path: string, file: Blob, options: UploadOptions = {}): Promise<UploadResult> {
   try {
     if (import.meta.env.VITE_MEDIA_STORAGE !== "r2") {

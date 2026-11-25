@@ -1,6 +1,6 @@
 # Imagens do Supabase para R2
 
-## Estado preparado em 25/11/2026
+## Preparacao inicial em 25/11/2026 (historico)
 
 A Cloudflare respondeu `10042: Please enable R2 through the Cloudflare Dashboard`. O proprietário precisa ativar R2 na conta `serpainfoservice@gmail.com` (`88c3de75d07ceeb5bffad0346b0d232d`). Nenhum bucket remoto foi criado e nenhuma URL foi trocada nesta etapa.
 
@@ -129,6 +129,21 @@ As métricas atuais do painel continuam sendo do Supabase; não representam auto
 - https://developers.cloudflare.com/r2/examples/cache-api/
 - https://supabase.com/docs/reference/javascript/storage-from-createsigneduploadurl
 
-## Dom?nio de produ??o
+## Producao ativada em 25/11/2026
 
-Em 25/11/2026, `noov.app.br` e `www.noov.app.br` foram vinculados ao Worker `noov-app` ap?s a remo??o dos quatro registros A da Vercel. HTTPS e a rota `/lojista/pedidos/historico` responderam 200 nos dois endere?os; a API administrativa rejeitou GET com 405. Os dom?nios constam na configura??o de produ??o. O ambiente `r2` usa `routes: []` e n?o assume os dom?nios de produ??o. A troca de hospedagem n?o ativa o R2 nem altera as URLs de imagens.
+R2 foi ativado na conta correta. O bucket privado Standard `noov-images` recebeu 155 arquivos, totalizando 82.441.363 bytes, todos baixados novamente e conferidos por SHA-256. Os arquivos originais no Supabase foram preservados.
+
+Worker principal publicado com `R2_MEDIA_ENABLED=true` e binding `R2_IMAGES`. Versao Cloudflare: `f4d862d3-c44c-4509-9b57-a8979838c374`; frontend v8.5. `noov.app.br` e `www.noov.app.br` usam dominios personalizados do Worker. O preview tem `routes: []` e nao assume esses dominios.
+
+O build passa a usar R2 por padrao quando `VITE_MEDIA_STORAGE` nao estiver definido. Para retorno de novos uploads, definir explicitamente `VITE_MEDIA_STORAGE=supabase`, preservando o binding e a leitura dos arquivos R2.
+
+Um envio pela API publica de foto de cliente foi autorizado pelas politicas atuais do Supabase e retornou 201; a leitura devolveu os mesmos bytes. Somente esse arquivo temporario foi removido apos o teste.
+
+Geradores `generate-banner` e `generate-category-image`: codigo preparado, mas ainda sem deploy e sem ativacao de `MEDIA_STORAGE=r2`. O token de gerenciamento local nao tem acesso ao projeto Noov; requer liberar esse projeto para a conta ou fornecer acesso de gerenciamento com escopo adequado. Esses geradores ainda podem criar imagens no Supabase.
+## Resultado da troca de URLs
+
+Foram atualizados e relidos com sucesso 100 campos: produtos 82, imagens de categorias 7, lojas 4, materiais de afiliado 4 e perfis 3. O plano foi regenerado com as referencias atuais imediatamente antes da aplicacao. Diario de retorno: `D:/noov-releases/media-migration-20261125/r2-url-journal.json`; plano aplicado: `r2-url-plan.json` na mesma pasta. Preservar ambos para eventual retorno.
+
+As 337 entradas sem arquivo e um avatar sem objeto continuam pendentes de recuperacao. URLs externas e de arquivos ausentes nao foram substituidas. Banco de dados, login e pagamentos permanecem no Supabase.
+
+Conferencia no navegador do cardapio Alloha: 143 elementos de imagem, 141 carregados; os 135 elementos que usavam R2 carregaram, sem erros JavaScript nessa navegacao. Duas imagens fora do R2 permaneceram sem carregar.

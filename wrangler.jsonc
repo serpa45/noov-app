@@ -18,11 +18,12 @@
   },
   "vars": {
     "SUPABASE_URL": "https://mwnjoglolbyeyrmkqqqc.supabase.co",
-    "R2_MEDIA_ENABLED": "false"
+    "R2_MEDIA_ENABLED": "true"
   },
   "secrets": {
     "required": [
-      "SUPABASE_SERVICE_ROLE_KEY"
+      "SUPABASE_SERVICE_ROLE_KEY",
+      "SUPABASE_PUBLISHABLE_KEY"
     ]
   },
   "env": {
@@ -73,6 +74,12 @@
     {
       "pattern": "www.noov.app.br",
       "custom_domain": true
+    }
+  ],
+  "r2_buckets": [
+    {
+      "binding": "R2_IMAGES",
+      "bucket_name": "noov-images"
     }
   ]
 }
