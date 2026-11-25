@@ -37,4 +37,6 @@ scratch_backup_inspect/
 .wrangler/
 .cloudflare/
 .dev.vars*
+.r2-migration/
+__pycache__/
 .env*

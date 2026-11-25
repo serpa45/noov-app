@@ -1,3 +1,4 @@
+import { uploadImage as uploadStoredImage } from "@/utils/imageStorage";
 import { useState, useEffect, useCallback } from "react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
@@ -527,12 +528,12 @@ const Products = () => {
     if (!imageFile || !lojaId) return null;
     const ext = imageFile.name.split(".").pop() || "jpg";
     const filePath = `${lojaId}/${crypto.randomUUID()}.${ext}`;
-    const { error } = await supabase.storage.from("product-images").upload(filePath, imageFile, {
+    const { data: uploadedImage, error } = await uploadStoredImage("product-images", filePath, imageFile, {
       cacheControl: "3600",
       upsert: false,
     });
     if (error) throw error;
-    const { data: urlData } = supabase.storage.from("product-images").getPublicUrl(filePath);
+    const urlData = { publicUrl: uploadedImage!.publicUrl };
     return urlData.publicUrl;
   };
 
@@ -551,12 +552,12 @@ const Products = () => {
     if (!bannerFile || !lojaId) return null;
     const ext = bannerFile.name.split(".").pop() || "jpg";
     const filePath = `${lojaId}/banners/${crypto.randomUUID()}.${ext}`;
-    const { error } = await supabase.storage.from("product-images").upload(filePath, bannerFile, {
+    const { data: uploadedImage, error } = await uploadStoredImage("product-images", filePath, bannerFile, {
       cacheControl: "3600",
       upsert: false,
     });
     if (error) throw error;
-    const { data: urlData } = supabase.storage.from("product-images").getPublicUrl(filePath);
+    const urlData = { publicUrl: uploadedImage!.publicUrl };
     return urlData.publicUrl;
   };
 
@@ -818,13 +819,13 @@ const Products = () => {
       try {
         const ext = categoryImageFile.name.split(".").pop() || "jpg";
         const filePath = `${lojaId}/${crypto.randomUUID()}.${ext}`;
-        const { error } = await supabase.storage.from("category-images").upload(filePath, categoryImageFile, {
+        const { data: uploadedImage, error } = await uploadStoredImage("category-images", filePath, categoryImageFile, {
           cacheControl: "3600",
           upsert: false,
           contentType: categoryImageFile.type || undefined,
         });
         if (error) throw error;
-        const { data: urlData } = supabase.storage.from("category-images").getPublicUrl(filePath);
+        const urlData = { publicUrl: uploadedImage!.publicUrl };
         finalImageUrl = urlData.publicUrl;
       } catch (err) {
         console.error("Error uploading category image:", err);
@@ -859,13 +860,13 @@ const Products = () => {
       try {
         const ext = categoryImageFile.name.split(".").pop() || "jpg";
         const filePath = `${lojaId}/${crypto.randomUUID()}.${ext}`;
-        const { error } = await supabase.storage.from("category-images").upload(filePath, categoryImageFile, {
+        const { data: uploadedImage, error } = await uploadStoredImage("category-images", filePath, categoryImageFile, {
           cacheControl: "3600",
           upsert: false,
           contentType: categoryImageFile.type || undefined,
         });
         if (error) throw error;
-        const { data: urlData } = supabase.storage.from("category-images").getPublicUrl(filePath);
+        const urlData = { publicUrl: uploadedImage!.publicUrl };
         finalImageUrl = urlData.publicUrl;
       } catch (err) {
         console.error("Error uploading category image:", err);

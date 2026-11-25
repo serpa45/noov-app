@@ -1,5 +1,6 @@
 import clearErrorLogs from "../server/clearErrorLogs";
 import quotaReadings from "../server/supabaseQuotaReadings";
+import { media } from "./media";
 
 const MAX_BODY_BYTES = 200000;
 const json = (body: unknown, status: number) => new Response(JSON.stringify(body), {
@@ -7,8 +8,9 @@ const json = (body: unknown, status: number) => new Response(JSON.stringify(body
 });
 
 export default {
-  async fetch(request: Request, env: Env): Promise<Response> {
+  async fetch(request: Request, env: Env, context?: ExecutionContext): Promise<Response> {
     const pathname = new URL(request.url).pathname;
+    if (pathname.startsWith("/media/") || pathname.startsWith("/api/media/") || pathname.startsWith("/api/media-internal/")) return media(request, env, context);
     if (pathname !== "/api" && !pathname.startsWith("/api/")) return env.ASSETS.fetch(request);
     const handler = pathname === "/api/admin/clear-error-logs" ? clearErrorLogs
       : pathname === "/api/admin/supabase-quota-readings" ? quotaReadings : null;

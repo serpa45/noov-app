@@ -1,3 +1,4 @@
+import { uploadImage } from "@/utils/imageStorage";
 import { useState, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
@@ -185,9 +186,10 @@ const Affiliates = () => {
         // Upload avatar if selected
         if (avatarFile) {
           const ext = avatarFile.name.split(".").pop();
-          const filePath = `afiliados/${uid}.${ext}`;
-          await supabase.storage.from("logos").upload(filePath, avatarFile, { upsert: true });
-          const { data: urlData } = supabase.storage.from("logos").getPublicUrl(filePath);
+          const filePath = `${uid}/afiliado-${crypto.randomUUID()}.${ext}`;
+          const { data: uploadedImage, error: imageError } = await uploadImage("logos", filePath, avatarFile, { upsert: true });
+          if (imageError) throw imageError;
+          const urlData = { publicUrl: uploadedImage!.publicUrl };
           await supabase.from("profiles").update({ avatar_url: urlData.publicUrl } as any).eq("user_id", uid);
         }
 

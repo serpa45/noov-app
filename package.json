@@ -14,7 +14,11 @@
     "cloudflare:dev": "wrangler dev",
     "cloudflare:check": "wrangler deploy --dry-run",
     "cloudflare:deploy": "npm run build && wrangler deploy",
-    "cloudflare:types": "wrangler types worker/env.d.ts"
+    "cloudflare:types": "wrangler types worker/env.d.ts --env r2",
+    "build:r2-preview": "vite build --mode r2-preview --outDir .wrangler/r2-preview-dist",
+    "cloudflare:r2:check": "wrangler deploy --env r2 --dry-run",
+    "cloudflare:r2:deploy": "wrangler deploy --env r2",
+    "cloudflare:typecheck": "tsc -p tsconfig.worker.json"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",

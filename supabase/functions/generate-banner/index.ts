@@ -1,5 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.4";
+import { uploadGeneratedImageToR2 } from "../_shared/r2Images.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -24,6 +25,9 @@ BRAND GUIDELINES (MUST FOLLOW):
 serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
+  }
+  if (!req.headers.get("Authorization")) {
+    return new Response(JSON.stringify({ error: "Não autorizado" }), { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } });
   }
 
   try {
@@ -224,18 +228,25 @@ CRITICAL REQUIREMENTS FOR THE BANNER IMAGE:
       const binaryData = Uint8Array.from(atob(base64Data), (c) => c.charCodeAt(0));
       const fileName = `banner-${Date.now()}.png`;
 
-      const { error: uploadErr } = await supabase.storage
-        .from("banners")
-        .upload(`materiais/${fileName}`, binaryData, {
-          contentType: "image/png",
-          upsert: true,
+      if (Deno.env.get("MEDIA_STORAGE") === "r2") {
+        imageUrl = await uploadGeneratedImageToR2({
+          origin: Deno.env.get("MEDIA_API_ORIGIN") || "https://noov.app.br", serviceRoleKey: SUPABASE_SERVICE_ROLE_KEY,
+          bucket: "banners", path: `materiais/${fileName}`, bytes: binaryData, contentType: "image/png",
         });
-
-      if (!uploadErr) {
-        const { data: pubUrl } = supabase.storage.from("banners").getPublicUrl(`materiais/${fileName}`);
-        imageUrl = pubUrl.publicUrl;
       } else {
-        console.error("Upload error:", uploadErr);
+        const { error: uploadErr } = await supabase.storage
+          .from("banners")
+          .upload(`materiais/${fileName}`, binaryData, {
+            contentType: "image/png",
+            upsert: true,
+          });
+
+        if (!uploadErr) {
+          const { data: pubUrl } = supabase.storage.from("banners").getPublicUrl(`materiais/${fileName}`);
+          imageUrl = pubUrl.publicUrl;
+        } else {
+          console.error("Upload error:", uploadErr);
+        }
       }
     }
 

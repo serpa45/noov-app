@@ -1,13 +1,13 @@
 import { createClient } from "@supabase/supabase-js";
 import { validateQuotaSnapshot } from "../src/utils/supabaseQuotas.js";
-import type { ServerEnvironment } from "./clearErrorLogs.js";
+import { serverEnvironment, type ServerEnvironment } from "./clearErrorLogs.js";
 
 export const QUOTA_BUCKET = "noov-system-metrics-private";
 export const QUOTA_OBJECT = "pro-usage-reading.json";
 type Request = { method?: string; headers: Record<string, string | string[] | undefined>; body?: unknown };
 type Response = { setHeader(name: string, value: string): unknown; status(code: number): Response; json(body: unknown): unknown };
 
-export default async function quotaReadings(req: Request, res: Response, environment: ServerEnvironment = process.env) {
+export default async function quotaReadings(req: Request, res: Response, environment: ServerEnvironment = serverEnvironment()) {
   res.setHeader("Cache-Control", "no-store");
   if (!["GET", "PUT"].includes(req.method || "")) {
     res.setHeader("Allow", "GET, PUT");

@@ -1,5 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.4";
+import { uploadGeneratedImageToR2 } from "../_shared/r2Images.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -102,6 +103,14 @@ serve(async (req) => {
     const imageBytes = Uint8Array.from(atob(base64Data), (c) => c.charCodeAt(0));
 
     const fileName = `${categoryName.toLowerCase().replace(/[^a-z0-9]/g, "-")}-${Date.now()}.png`;
+
+    if (Deno.env.get("MEDIA_STORAGE") === "r2") {
+      const imageUrl = await uploadGeneratedImageToR2({
+        origin: Deno.env.get("MEDIA_API_ORIGIN") || "https://noov.app.br", serviceRoleKey,
+        bucket: "category-images", path: fileName, bytes: imageBytes, contentType: "image/png",
+      });
+      return new Response(JSON.stringify({ imageUrl }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+    }
 
     // Upload using Supabase client with service role
     const { error: uploadError } = await adminClient.storage

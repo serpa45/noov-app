@@ -1,3 +1,4 @@
+import { uploadImage as uploadStoredImage } from "@/utils/imageStorage";
 import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
@@ -76,9 +77,9 @@ const AdminMensagens = () => {
         if (!user?.id) throw new Error("Usuário não autenticado");
         const ext = bannerFile.name.split(".").pop();
         const path = `${user.id}/mensagens-${Date.now()}.${ext}`;
-        const { error: upErr } = await supabase.storage.from("banners").upload(path, bannerFile);
+        const { data: uploadedImage, error: upErr } = await uploadStoredImage("banners", path, bannerFile);
         if (upErr) throw upErr;
-        const { data: pub } = supabase.storage.from("banners").getPublicUrl(path);
+        const pub = { publicUrl: uploadedImage!.publicUrl };
         banner_url = pub.publicUrl;
       }
       const payload = {

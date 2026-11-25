@@ -1,3 +1,4 @@
+import { uploadImage as uploadStoredImage } from "@/utils/imageStorage";
 import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
@@ -87,12 +88,12 @@ export default function AdminAvaliacoes() {
       }
       const ext = file.name.split(".").pop();
       const path = `${uid}/event-${Date.now()}.${ext}`;
-      const { error: upErr } = await supabase.storage.from("banners").upload(path, file, { upsert: true });
+      const { data: uploadedImage, error: upErr } = await uploadStoredImage("banners", path, file, { upsert: true });
       if (upErr) {
         toast.error("Erro ao enviar imagem: " + upErr.message);
         return;
       }
-      const { data: pub } = supabase.storage.from("banners").getPublicUrl(path);
+      const pub = { publicUrl: uploadedImage!.publicUrl };
       const url = pub.publicUrl + "?t=" + Date.now();
       const { error } = await supabase
         .from("system_rating_settings")

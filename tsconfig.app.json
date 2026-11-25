@@ -31,5 +31,6 @@
   },
   "include": [
     "src"
-  ]
+  ],
+  "exclude": ["src/test/cloudflareWorker.test.ts", "src/test/r2Media.test.ts"]
 }

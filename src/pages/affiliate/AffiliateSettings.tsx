@@ -1,3 +1,4 @@
+import { uploadImage as uploadStoredImage } from "@/utils/imageStorage";
 import { useState, useEffect } from "react";
 import { motion } from "framer-motion";
 import { User, CreditCard, Bell, Loader2, Camera } from "lucide-react";
@@ -66,15 +67,11 @@ const AffiliateSettings = () => {
       const fileExt = file.name.split('.').pop() || 'jpg';
       const filePath = `${user.id}-${Date.now()}.${fileExt}`;
 
-      const { error: uploadError } = await supabase.storage
-        .from('avatars')
-        .upload(filePath, file, { upsert: true });
+      const { data: uploadedImage, error: uploadError } = await uploadStoredImage("avatars", filePath, file, { upsert: true });
 
       if (uploadError) throw uploadError;
 
-      const { data: { publicUrl } } = supabase.storage
-        .from('avatars')
-        .getPublicUrl(filePath);
+      const publicUrl = uploadedImage!.publicUrl;
 
       const { error: updateError } = await supabase
         .from('profiles')

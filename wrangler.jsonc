@@ -10,13 +10,69 @@
     "directory": "./dist",
     "binding": "ASSETS",
     "not_found_handling": "single-page-application",
-    "run_worker_first": ["/api", "/api/*"]
+    "run_worker_first": [
+      "/api",
+      "/api/*",
+      "/media/*"
+    ]
   },
-  "vars": { "SUPABASE_URL": "https://mwnjoglolbyeyrmkqqqc.supabase.co" },
-  "secrets": { "required": ["SUPABASE_SERVICE_ROLE_KEY"] },
+  "vars": {
+    "SUPABASE_URL": "https://mwnjoglolbyeyrmkqqqc.supabase.co",
+    "R2_MEDIA_ENABLED": "false"
+  },
+  "secrets": {
+    "required": [
+      "SUPABASE_SERVICE_ROLE_KEY"
+    ]
+  },
+  "env": {
+    "r2": {
+      "name": "noov-app-r2-preview",
+      "assets": {
+        "directory": "./.wrangler/r2-preview-dist",
+        "binding": "ASSETS",
+        "not_found_handling": "single-page-application",
+        "run_worker_first": [
+          "/api",
+          "/api/*",
+          "/media/*"
+        ]
+      },
+      "vars": {
+        "SUPABASE_URL": "https://mwnjoglolbyeyrmkqqqc.supabase.co",
+        "R2_MEDIA_ENABLED": "true"
+      },
+      "secrets": {
+        "required": [
+          "SUPABASE_SERVICE_ROLE_KEY",
+          "SUPABASE_PUBLISHABLE_KEY"
+        ]
+      },
+      "r2_buckets": [
+        {
+          "binding": "R2_IMAGES",
+          "bucket_name": "noov-images"
+        }
+      ],
+      "routes": []
+    }
+  },
   "observability": {
     "enabled": true,
     "head_sampling_rate": 0.1,
-    "traces": { "enabled": true, "head_sampling_rate": 0.1 }
-  }
+    "traces": {
+      "enabled": true,
+      "head_sampling_rate": 0.1
+    }
+  },
+  "routes": [
+    {
+      "pattern": "noov.app.br",
+      "custom_domain": true
+    },
+    {
+      "pattern": "www.noov.app.br",
+      "custom_domain": true
+    }
+  ]
 }

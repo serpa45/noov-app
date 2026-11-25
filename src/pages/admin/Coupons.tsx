@@ -1,3 +1,4 @@
+import { uploadImage as uploadStoredImage } from "@/utils/imageStorage";
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
@@ -193,9 +194,9 @@ export default function Coupons() {
     if (!loja?.id) return;
     const ext = file.name.split('.').pop() || 'jpg';
     const path = `${loja.id}/cupom-popup-${Date.now()}.${ext}`;
-    const { error: upErr } = await supabase.storage.from("banners").upload(path, file, { upsert: true });
+    const { data: uploadedImage, error: upErr } = await uploadStoredImage("banners", path, file, { upsert: true });
     if (upErr) { toast.error("Erro ao enviar imagem"); return; }
-    const { data: urlData } = supabase.storage.from("banners").getPublicUrl(path);
+    const urlData = { publicUrl: uploadedImage!.publicUrl };
     updatePopupFieldMutation.mutate({ cupom_popup_imagem_url: urlData.publicUrl });
   };
 

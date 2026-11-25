@@ -1,3 +1,4 @@
+import { uploadImage as uploadStoredImage } from "@/utils/imageStorage";
 import { useState, useEffect, useCallback } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
@@ -226,9 +227,9 @@ export default function DiverseProductForm({ storeId, productId, onSave, onCance
     try {
       const ext = file.name.split(".").pop() || "jpg";
       const filePath = `${storeId}/${crypto.randomUUID()}.${ext}`;
-      const { error } = await supabase.storage.from("product-images").upload(filePath, file, { cacheControl: "3600", upsert: false });
+      const { data: uploadedImage, error } = await uploadStoredImage("product-images", filePath, file, { cacheControl: "3600", upsert: false });
       if (error) throw error;
-      const { data: urlData } = supabase.storage.from("product-images").getPublicUrl(filePath);
+      const urlData = { publicUrl: uploadedImage!.publicUrl };
       setImageUrl(urlData.publicUrl);
       toast.success("Imagem enviada!");
     } catch (err: any) {

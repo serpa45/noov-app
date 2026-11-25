@@ -1,3 +1,4 @@
+import { uploadImage as uploadStoredImage } from "@/utils/imageStorage";
 import { useParams } from "react-router-dom";
 import { useState, useRef, useEffect, useMemo, lazy, Suspense } from "react";
 
@@ -6230,7 +6231,7 @@ const StoreMenu = () => {
                             try {
                               const ext = file.name.split('.').pop() || 'jpg';
                               const path = `${clientData.id}-${Date.now()}.${ext}`;
-                              const { error: uploadError } = await supabase.storage.from('client-photos').upload(path, file, { 
+                              const { data: uploadedImage, error: uploadError } = await uploadStoredImage("client-photos", path, file, {
                                 upsert: true,
                                 cacheControl: '3600'
                               });
@@ -6240,7 +6241,7 @@ const StoreMenu = () => {
                                 throw uploadError;
                               }
                               
-                              const { data: urlData } = supabase.storage.from('client-photos').getPublicUrl(path);
+                              const urlData = { publicUrl: uploadedImage!.publicUrl };
                               const foto_url = `${urlData.publicUrl}?t=${Date.now()}`;
                               const { error: updateError } = await supabase.from('clientes').update({ foto_url }).eq('id', clientData.id);
                               

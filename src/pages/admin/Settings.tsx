@@ -1,3 +1,4 @@
+import { uploadImage as uploadStoredImage } from "@/utils/imageStorage";
 import { useState, useEffect } from "react";
 import { useSearchParams } from "react-router-dom";
 import { Copy, Check, Loader2, Clock, Bike, Plus, Trash2, Save, CreditCard, X, QrCode, Pencil, Printer, ChevronDown, Upload, AlertCircle, Settings2, Star, Gift, Utensils, Lock, Ticket, Users, Megaphone, Image as ImageIcon } from "lucide-react";
@@ -935,11 +936,9 @@ const Settings = () => {
                       try {
                         const ext = file.name.split(".").pop() || "jpg";
                         const path = `${user.id}/popup-informativo/${loja.id}-${Date.now()}.${ext}`;
-                        const { error: upErr } = await supabase.storage
-                          .from("banners")
-                          .upload(path, file, { upsert: true, cacheControl: "3600" });
+                        const { data: uploadedImage, error: upErr } = await uploadStoredImage("banners", path, file, { upsert: true, cacheControl: "3600" });
                         if (upErr) throw upErr;
-                        const { data: pub } = supabase.storage.from("banners").getPublicUrl(path);
+                        const pub = { publicUrl: uploadedImage!.publicUrl };
                         setPopupInfoImagemUrl(pub.publicUrl);
                         toast.success("Imagem carregada! Lembre de salvar.");
                       } catch {

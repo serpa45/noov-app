@@ -1,3 +1,4 @@
+import { uploadImage as uploadStoredImage } from "@/utils/imageStorage";
 import { useState, useRef } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
@@ -373,9 +374,7 @@ const AdminMateriais = () => {
 
                       // Upload image to storage
                       // Usando o bucket 'banners_produtos'
-                      const { error: uploadError } = await supabase.storage
-                        .from('banners')
-                        .upload(filePath, file, {
+                      const { data: uploadedImage, error: uploadError } = await uploadStoredImage("banners", filePath, file, {
                           cacheControl: '3600',
                           upsert: false
                         });
@@ -389,9 +388,7 @@ const AdminMateriais = () => {
                         throw uploadError;
                       }
 
-                      const { data: { publicUrl } } = supabase.storage
-                        .from('banners')
-                        .getPublicUrl(filePath);
+                      const publicUrl = uploadedImage!.publicUrl;
 
                       const description = descInput?.value;
 

@@ -1,3 +1,4 @@
+import { uploadImage as uploadStoredImage } from "@/utils/imageStorage";
 import { useState, useRef, useEffect } from "react";
 import { motion } from "framer-motion";
 import { User, Mail, Phone, Save, Loader2, ArrowLeft, MapPin, Upload, Image, Palette, ImageIcon, Link as LinkIcon, Copy, AlertTriangle, CheckCircle2, Instagram, Cake } from "lucide-react";
@@ -171,7 +172,7 @@ const Profile = () => {
       const ext = file.name.split(".").pop() || "jpg";
       const path = `${user.id}/${Date.now()}.${ext}`;
       
-      const { error: uploadError } = await supabase.storage.from("logos").upload(path, file, { 
+      const { data: uploadedImage, error: uploadError } = await uploadStoredImage("logos", path, file, {
         upsert: true,
         cacheControl: "3600",
       });
@@ -182,7 +183,7 @@ const Profile = () => {
         return;
       }
       
-      const { data: urlData } = supabase.storage.from("logos").getPublicUrl(path);
+      const urlData = { publicUrl: uploadedImage!.publicUrl };
       const url = urlData.publicUrl;
       setLogoUrl(url);
       setAvatarUrl(url);
@@ -221,12 +222,12 @@ const Profile = () => {
     try {
       const ext = file.name.split(".").pop();
       const path = `${user.id}/banner-${(loja as any).id}-${Date.now()}.${ext}`;
-      const { error } = await supabase.storage.from("banners").upload(path, file, { upsert: true, cacheControl: "3600" });
+      const { data: uploadedImage, error } = await uploadStoredImage("banners", path, file, { upsert: true, cacheControl: "3600" });
       if (error) {
         toast({ title: "Erro ao enviar banner", description: error.message, variant: "destructive" });
         return;
       }
-      const { data: urlData } = supabase.storage.from("banners").getPublicUrl(path);
+      const urlData = { publicUrl: uploadedImage!.publicUrl };
       const url = urlData.publicUrl + "?t=" + Date.now();
       setBannerUrl(url);
       await supabase.from("lojas").update({ banner_url: url } as any).eq("id", (loja as any).id);
